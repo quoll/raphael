@@ -1,46 +1,17 @@
 (ns ^{:doc "A namespace for manually parsing Turtle. Entry point is parse-doc."
       :author "Paula Gearon"}
     quoll.raphael
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [quoll.text :as text :refer [char-at]]))
 
 (def ^:const WIDTH 80)
 
 (defn line-at
   "Returns a line of text that is no more that WIDTH characters. Used for user output."
   [s n]
-  (let [line (subs s n (+ n WIDTH))
+  (let [line (subs s n (min (+ n WIDTH) (count s)))
         nl (str/index-of line \newline)]
     (if nl (subs line 0 nl) line)))
-
-(defn string-builder
-  "Creates a mutable string builder.
-  init - optional initial string.
-  return: an object that can be appended to."
-  ([] (StringBuilder.))
-  ([init] (StringBuilder. init)))
-
-(defn append!
-  "Appends data to a string builders.
-  sb - the string builder.
-  data - the data to append in string form.
-  return: the string builder (may be ignored since it mutates)"
-  [sb data]
-  (.append sb data))
-
-(defn last-char
-  "Returns the last char appended to a string builder.
-  Equivalent to `(last (str sb))` but uses direct calls.
-  sb - the mutable string builder.
-  return: the final char."
-  [sb]
-  #?(:clj (.charAt sb (dec (.length sb)))
-     :cljs (let [s (str sb)] (nth s (dec (count sb))))))
-
-(defn parse-hex
-  "Parses a hexadecimal string into a long"
-  [s]
-  #?(:clj (Long/parseLong s 16)
-     :cljs (js/parseInt s 16)))
 
 (defmacro throw-unex
   "Convenience macro to print a message, the offset and the current line.
@@ -131,11 +102,13 @@
   n - the new offset after skipping whitespace.
   c - the first non-whitespace character, found at position n"
   [s n]
-  (loop [n n c (nth s n)]
-    (if (whitespace? c)
-      (let [n' (inc n)]
-        (recur n' (nth s n')))
-      [n c])))
+  (loop [n n c (char-at s n)]
+    (if (= :eof c)
+      [-1 :eof]
+      (if (whitespace? c)
+        (let [n' (inc n)]
+          (recur n' (char-at s n')))
+        [n c]))))
 
 (defn skip-to
   "Skip over the whitespace to the required character. If there are nonwhitespace characters, this is an error.
@@ -146,12 +119,12 @@
   n - the new offset after skipping whitespace to the end of the line.
   c - the first non-whitespace character, found at position n"
   [s n chars]
-  (loop [n n c (nth s n)]
+  (loop [n n c (char-at s n)]
     (cond
       (chars c) (let [n' (inc n)]
-                  [n' (nth s n')])
+                  [n' (char-at s n')])
       (whitespace? c) (let [n' (inc n)]
-                        (recur n' (nth s n')))
+                        (recur n' (char-at s n')))
       :default (throw-unex "Unexpected characters after end of line: " s n))))
 
 (defn skip-past-dot
@@ -173,14 +146,14 @@
   n - The offset immediately after the prefix.
   prefix - The prefix string."
   [s n]
-  (let [sb (string-builder)]
-    (loop [n' n c (nth s n)]
+  (let [sb (text/string-builder)]
+    (loop [n' n c (char-at s n)]
       (cond
-        (= \: c) (if (= \. (last-char sb))
+        (= \: c) (if (= \. (text/last-char sb))
                    (throw-unex "Unexpected '.' at end of prefix: " s n)
                    [(inc n') (str sb)])
         (or (and (= n n') (pn-chars-base? c))
-            (and (not= n n') (pn-chars? c))) (let [n' (inc n')] (append! sb c) (recur n' (nth s n')))
+            (and (not= n n') (pn-chars? c))) (let [n' (inc n')] (text/append! sb c) (recur n' (char-at s n')))
         :default (throw-unex "Unexpected character in prefix: " s n)))))
 
 (defn parse-u-char
@@ -191,13 +164,13 @@
   n - the offset immediately after the ucode
   char - the character code that was parsed"
   [s n]
-  (let [f (nth s (inc n))
+  (let [f (char-at s (inc n))
         end (case f
               \u (+ n 6)
               \U (+ n 10)
               nil)]
     (when end
-      [end (char (parse-hex (subs s (+ n 2) end)))])))
+      [end (char (text/parse-hex (subs s (+ n 2) end)))])))
 
 (defn parse-iri-ref
   "Parse an iri references. This is an iri string surrounded by <> characters. The <> characters are not returned.
@@ -210,8 +183,8 @@
   [s n c]
   (when-not (= c \<)
     (throw-unex "Unexpected character commencing an IRI Reference: " s n))
-  (let [sb (string-builder)]
-    (loop [n (inc n) c (nth s n)]
+  (let [sb (text/string-builder)]
+    (loop [n (inc n) c (char-at s n)]
       (if (= c \>)
         [(inc n) (str sb)]
         (if (non-iri-char? c)
@@ -219,12 +192,12 @@
           (if (= c \\)
             (if-let [[n ch] (parse-u-char s n)]
               (let [n' (inc n)]
-                (append! sb ch)
-                (recur n' (nth s n')))
+                (text/append! sb ch)
+                (recur n' (char-at s n')))
               (throw-unex "Unexpected \\ character in IRI: " s n))
             (let [n' (inc n)]
-              (append! sb c)
-              (recur n' (nth s n')))))))))
+              (text/append! sb c)
+              (recur n' (char-at s n')))))))))
 
 (defn parse-prefixed-name
   "Parse a prefix:local-name pair.
@@ -310,7 +283,7 @@
   n - the position of the end of the line.
   gen - the new generator."
   [s n gen end-char skip]
-  (if (whitespace? (nth s (+ n skip)))
+  (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
           [n prefix] (parse-prefix s n c)
           [n c] (skip-whitespace s n)
@@ -330,7 +303,7 @@
   n - the position of the end of the line.
   gen - the new generator."
   [s n gen end-char skip]
-  (if (whitespace? (nth s (+ n skip)))
+  (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
           [n iri] (parse-iri-ref s n c)
           n (skip-to s n end-char)]
