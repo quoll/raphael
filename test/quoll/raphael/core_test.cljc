@@ -21,3 +21,15 @@
     (is (= [4 \space] (skip-to "   \n a" 1 newline?)))
     (is (= [4 \space] (skip-to "   \n a" 3 newline?)))
     (is (thrown? ExceptionInfo (skip-to "   \n a" 4 newline?)))))
+
+(deftest iri-ref-test
+  (testing "Parsing an IRI reference"
+    (is (= "http://ex.com/"
+           (parse-iri-ref "<http://ex.com/>" 0 \<)))
+    (is (= "http://example.com/path?query=x&y=2#fragment"
+           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \<)))
+    (is (= "http://ex.com/"
+           (parse-iri-ref "foo <http://ex.com/>" 4 \<)))
+    (is (= "http://example.com/path?query=x&y=2#fragment"
+           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \<)))
+    ))

@@ -172,11 +172,20 @@
     (when end
       [end (char (text/parse-hex (subs s (+ n 2) end)))])))
 
+;; A regex to find the scheme at the start of an IRI
+(def scheme-re #"^[A-Za-z][A-Za-z0-9.+-]*:")
+
+(defn relative-iri?
+  "Indicates if an IRI is relative."
+  [s]
+  (nil? (re-find scheme-re s)))
+
 (defn parse-iri-ref
   "Parse an iri references. This is an iri string surrounded by <> characters. The <> characters are not returned.
   s - The string to parse.
   n - The offset to parse from.
   c - the first character of the iri reference.
+  gen - the current generator
   return: [n prefix]
   n - The offset immediately after the prefix.
   prefix - The iri string."
@@ -186,7 +195,11 @@
   (let [sb (text/string-builder)]
     (loop [n (inc n) c (char-at s n)]
       (if (= c \>)
-        [(inc n) (str sb)]
+        (let [i (str sb)
+              iri (if (and gen (relative-iri? i))
+                    (if-let [base (iri-for gen :base)] (str base i) i)
+                    i)]
+          [(inc n) iri])
         (if (non-iri-char? c)
           (throw-unex "Unexpected character in IRI: " s n)
           (if (= c \\)
@@ -222,7 +235,7 @@
   triples - the triples generated in parsing the node."
   [s n c gen]
   ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c)
+  (parse-iri-ref s n c gen)
   )
 
 (defn parse-object
@@ -236,7 +249,7 @@
   triples - the triples generated in parsing the node."
   [s n c gen]
   ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c)
+  (parse-iri-ref s n c gen)
   )
 
 (defn parse-predicate
@@ -250,7 +263,7 @@
   predicate - the node for the parsed predicate."
   [s n c gen]
   ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c)
+  (parse-iri-ref s n c gen)
   )
 
 (defn parse-triples
@@ -287,7 +300,7 @@
     (let [[n c] (skip-whitespace s (+ n skip))
           [n prefix] (parse-prefix s n c)
           [n c] (skip-whitespace s n)
-          [n iri] (parse-iri-ref s n c)
+          [n iri] (parse-iri-ref s n c gen)
           n (skip-to s n end-char)]
       [n (add-prefix gen :base iri)])
     (throw-unex "Unknown statement: " s n)))
@@ -305,7 +318,7 @@
   [s n gen end-char skip]
   (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
-          [n iri] (parse-iri-ref s n c)
+          [n iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
           n (skip-to s n end-char)]
       [n (add-prefix gen :base iri)])
     (throw-unex "Unknown statement: " s n)))
