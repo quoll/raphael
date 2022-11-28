@@ -4,14 +4,12 @@ A Clojure library for parsing the Terse Triples Language: Turtle.
 
 ## Usage
 
-FIXME: write usage documentation!
+Can't yet invoke a library API function from the command-line:
 
-Invoke a library API function from the command-line:
-
-    $ clojure -X quoll.raphael/foo :a 1 :b '"two"'
+    $ clojure -X quoll.raphael/parse :a 1 :b '"two"'
     {:a 1, :b "two"} "Hello, World!"
 
-Run the project's tests (they'll fail until you edit them):
+Run the project's tests:
 
     $ clojure -T:build test
 
