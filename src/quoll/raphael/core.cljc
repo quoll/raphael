@@ -1,8 +1,8 @@
 (ns ^{:doc "A namespace for manually parsing Turtle. Entry point is parse-doc."
       :author "Paula Gearon"}
-    quoll.raphael
+    quoll.raphael.core
   (:require [clojure.string :as str]
-            [quoll.text :as text :refer [char-at]]))
+            [quoll.raphael.text :as text :refer [char-at]]))
 
 (def ^:const WIDTH 80)
 

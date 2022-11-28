@@ -1,6 +1,6 @@
-(ns quoll.raphael-test
+(ns quoll.raphael.core-test
   (:require [clojure.test :refer [deftest testing is]]
-            [quoll.raphael :refer [skip-whitespace skip-to dot? newline?]])
+            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?]])
   (:import [clojure.lang ExceptionInfo]))
 
 (deftest ws-test

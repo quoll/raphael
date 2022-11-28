@@ -1,6 +1,6 @@
 (ns ^{:doc "Text functions, for building and parsing strings"
       :author "Paula Gearon"}
-    quoll.text)
+    quoll.raphael.text)
 
 (defn string-builder
   "Creates a mutable string builder.
