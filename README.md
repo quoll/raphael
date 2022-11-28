@@ -2,6 +2,9 @@
 
 A Clojure library for parsing the Terse Triples Language: Turtle.
 
+This parser is in pure Clojure for portability.
+It also avoids parser tools, in an effort to parse large documents quickly.
+
 ## Usage
 
 Can't yet invoke a library API function from the command-line:
