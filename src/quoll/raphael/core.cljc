@@ -68,7 +68,7 @@
   high - the high end of the character range to add, inclusive.
   return - the set with the new range of characters added."
   [chars low high]
-  (into chars (range (long low) (inc (long high)))))
+  (into chars (map char) (range (long low) (inc (long high)))))
 
 (def whitespace? #{\space \tab \return \newline})
 
@@ -77,8 +77,8 @@
       (add-range \A \Z) (add-range \a \z) (add-range \u00C0 \u00D6) (add-range \u00D8 \u00F6)
       (add-range \u00F8 \u02FF) (add-range \u0370 \u037D) (add-range \u037F \u1FFF)
       (add-range \u200C \u200D) (add-range \u2070 \u218F) (add-range \u2C00 \u2FEF)
-      (add-range \u3001 \uD7FF) (add-range \uF900 \uFDCF) (add-range \uFDF0 \uFFFD)
-      (add-range 0x10000 0xEFFFF)))
+      (add-range \u3001 \uD7FF) (add-range \uF900 \uFDCF) (add-range \uFDF0 \uFFFD)))
+      ;;(add-range 0x10000 0xEFFFF) ;; TODO: proxy pairs
 
 (def pn-chars-u? (conj pn-chars-base? \_))
 
@@ -142,10 +142,11 @@
   "Parse a prefix. This is a simple string terminated with a ':'. The : character is not part of the prefix.
   s - The string to parse.
   n - The offset to parse from.
+  c - The character at offset n.
   return: [n prefix]
   n - The offset immediately after the prefix.
   prefix - The prefix string."
-  [s n]
+  [s n c]
   (let [sb (text/string-builder)]
     (loop [n' n c (char-at s n)]
       (cond
@@ -154,7 +155,12 @@
                    [(inc n') (str sb)])
         (or (and (= n n') (pn-chars-base? c))
             (and (not= n n') (pn-chars? c))) (let [n' (inc n')] (text/append! sb c) (recur n' (char-at s n')))
-        :default (throw-unex "Unexpected character in prefix: " s n)))))
+        :default (do
+                   (prn "n=" n)
+                   (prn "n'=" n')
+                   (prn "c=" c " in?" (pn-chars-base? c))
+                   (prn "sb=" (str sb))
+                   (throw-unex "Unexpected character in prefix: " s n))))))
 
 (defn parse-u-char
   "Parse a code of \\uxxxx or \\Uxxxxxxxx.
@@ -292,8 +298,9 @@
   gen - The generator to update.
   end-char - A test for the final character
   skip - The number of characters to skip over before looking for the first whitespace
-  return: [n gen]
+  return: [n c gen]
   n - the position of the end of the line.
+  c - character at position n
   gen - the new generator."
   [s n gen end-char skip]
   (if (whitespace? (char-at s (+ n skip)))
@@ -301,8 +308,8 @@
           [n prefix] (parse-prefix s n c)
           [n c] (skip-whitespace s n)
           [n iri] (parse-iri-ref s n c gen)
-          n (skip-to s n end-char)]
-      [n (add-prefix gen :base iri)])
+          [n c] (skip-to s n end-char)]
+      [n c (add-prefix gen prefix iri)])
     (throw-unex "Unknown statement: " s n)))
 
 (defn parse-base-end
@@ -312,15 +319,16 @@
   gen - The generator to update.
   end-char - A test for the final character
   skip - The number of characters to skip over before looking for the first whitespace
-  return: [n gen]
+  return: [n c gen]
   n - the position of the end of the line.
+  c - character at position n
   gen - the new generator."
   [s n gen end-char skip]
   (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
           [n iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
-          n (skip-to s n end-char)]
-      [n (add-prefix gen :base iri)])
+          [n c] (skip-to s n end-char)]
+      [n c (add-prefix gen :base iri)])
     (throw-unex "Unknown statement: " s n)))
 
 (defn parse-statement
@@ -328,22 +336,23 @@
   s - The string to parse.
   n - The position in the string to parse from.
   gen - The current generator.
-  return: [n gen triples]
+  return: [n c gen triples]
   n - the new offset after parsing.
+  c - the character at position n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
   [s n gen]
   (let [[n c] (skip-whitespace s n)
-        [n' gen'] (case c
-                    \@ (cond
-                         (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n dot? 5)
-                         (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n dot? 7)
-                         :default (throw-unex "Unknown statement: " s n))
-                    (\B \b) (when (= (str/lower-case (subs s (inc n) (+ n 4)) "ase"))
-                              (parse-base-end s n gen newline? 4))
-                    (\P \p) (when (= (str/lower-case (subs s (inc n) (+ n 6)) "refix"))
-                              (parse-prefix-iri-end s n gen newline? 6))
-                    nil)]
+        [n' c' gen'] (case c
+                       \@ (cond
+                            (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
+                            (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
+                            :default (throw-unex "Unknown statement: " s n))
+                       (\B \b) (when (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
+                                 (parse-base-end s n gen newline? 4))
+                       (\P \p) (when (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
+                                 (parse-prefix-iri-end s n gen newline? 6))
+                       nil)]
     (if n'
-      [n' gen' nil]
+      [n' c' gen' nil]
       (parse-triples s n c gen))))
