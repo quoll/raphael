@@ -49,7 +49,10 @@
           [n1 c1 g1 t1] (parse-statement "BASE <http://test.org/>\n" 0 g)
           [n2 c2 g2 t2] (parse-statement "@base <http://test.com/>. \n" 0 g1)
           [n3 c3 g3 t3] (parse-statement "PREFIX test: <http://test.org/>\n" 0 g2)
-          [n4 c4 g4 t4] (parse-statement "@prefix t2: <http://test.com/>. \n" 0 g3)]
+          [n4 c4 g4 t4] (parse-statement "@prefix t2: <http://test.com/>. \n" 0 g3)
+          [n5 c5 g5 t5] (parse-statement "@prefix t\ud800\udd49: <http://atticten.com/>. \n" 0 g4)
+          [n6 c6 g6 t6] (parse-statement "@prefix \ud800\udd49x: <http://atticten.com/pre>. \n" 0 g5)
+          [n7 c7 g7 t7] (parse-statement "@prefix \udb7f\udfffx: <http://unicode.com/limit>. \n" 0 g6)]
       (is (= 24 n1))
       (is (= :eof c1))
       (is (= {:base "http://test.org/"} (:namespaces g1)))
@@ -65,4 +68,33 @@
       (is (= 31 n4))
       (is (= \space c4))
       (is (= {:base "http://test.com/" "test" "http://test.org/" "t2" "http://test.com/"} (:namespaces g4)))
-      (is (nil? t4)))))
+      (is (nil? t4))
+
+      (is (= 36 n5))
+      (is (= \space c5))
+      (is (= {:base "http://test.com/" "test" "http://test.org/" "t2" "http://test.com/"
+              "t\ud800\udd49" "http://atticten.com/"}
+             (:namespaces g5)))
+      (is (nil? t5))
+      (is (= 39 n6))
+      (is (= \space c6))
+      (is (= {:base "http://test.com/" "test" "http://test.org/" "t2" "http://test.com/"
+              "t\ud800\udd49" "http://atticten.com/" "\ud800\udd49x" "http://atticten.com/pre"}
+             (:namespaces g6)))
+      (is (nil? t6))
+      (is (= 40 n7))
+      (is (= \space c7))
+      (is (= {:base "http://test.com/" "test" "http://test.org/" "t2" "http://test.com/"
+              "t\ud800\udd49" "http://atticten.com/" "\ud800\udd49x" "http://atticten.com/pre"
+              "\udb7f\udfffx" "http://unicode.com/limit"}
+             (:namespaces g7)))
+      (is (nil? t7))
+
+      (is (thrown? ExceptionInfo
+                   (parse-statement "@prefix \ud800\ud849x: <http://atticten.com/pre>. \n" 0 g5)))
+      (is (thrown? ExceptionInfo
+                   (parse-statement "@prefix \ud800x: <http://atticten.com/pre>. \n" 0 g5)))
+      (is (thrown? ExceptionInfo
+                   (parse-statement "@prefix \udd00\udd49x: <http://atticten.com/pre>. \n" 0 g5)))
+      (is (thrown? ExceptionInfo
+                   (parse-statement "@prefix \udb80\udc00x: <http://atticten.com/pre>. \n" 0 g5))))))

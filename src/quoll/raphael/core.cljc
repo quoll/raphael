@@ -78,19 +78,20 @@
       (add-range \u00F8 \u02FF) (add-range \u0370 \u037D) (add-range \u037F \u1FFF)
       (add-range \u200C \u200D) (add-range \u2070 \u218F) (add-range \u2C00 \u2FEF)
       (add-range \u3001 \uD7FF) (add-range \uF900 \uFDCF) (add-range \uFDF0 \uFFFD)))
-      ;;(add-range 0x10000 0xEFFFF)
+
+;; (range 0x10000 0xEFFFF) will be taken care of by the high/low surrogate tests
 
 (defn high-surrogate?
   "Tests if a character is both a high surrogate (0xD800 <= c <= 0xDBFF)
   and also in range (0xD800 <= c <= 0xDB7F) which matches the character range 0x10000 to 0xEFFFF"
   [c]
-  (<= 0xD800 c 0xDB7F))
+  (<= 0xD800 (long c) 0xDB7F))
 
 (defn low-surrogate?
   "Tests if a character is a low surrogate (0xDC00 <= c <= 0xDFFF)
   which matches the character range 0x10000 to 0xEFFFF"
   [c]
-  (<= 0xDC00 c 0xDFFF))
+  (<= 0xDC00 (long c) 0xDFFF))
 
 (def pn-chars-u? (conj pn-chars-base? \_))
 
