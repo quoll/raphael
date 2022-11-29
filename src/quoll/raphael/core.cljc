@@ -89,7 +89,7 @@
 
 (def pn-chars-dot? (conj pn-chars? \.))
 
-(def non-iri-char? #{\< \> \" \{ \} \| \^ \`})
+(def non-iri-char? #{\< \> \" \{ \} \| \^ \` \space :eof})
 
 (defn dot? [c] (= \. c))
 (defn newline? [c] (= \newline c))
@@ -189,7 +189,7 @@
   return: [n prefix]
   n - The offset immediately after the prefix.
   prefix - The iri string."
-  [s n c]
+  [s n c gen]
   (when-not (= c \<)
     (throw-unex "Unexpected character commencing an IRI Reference: " s n))
   (let [sb (text/string-builder)]

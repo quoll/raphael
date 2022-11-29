@@ -1,6 +1,7 @@
 (ns quoll.raphael.core-test
   (:require [clojure.test :refer [deftest testing is]]
-            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?]])
+            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
+                                        parse-iri-ref add-prefix new-generator]])
   (:import [clojure.lang ExceptionInfo]))
 
 (deftest ws-test
@@ -24,12 +25,20 @@
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
-    (is (= "http://ex.com/"
-           (parse-iri-ref "<http://ex.com/>" 0 \<)))
-    (is (= "http://example.com/path?query=x&y=2#fragment"
-           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \<)))
-    (is (= "http://ex.com/"
-           (parse-iri-ref "foo <http://ex.com/>" 4 \<)))
-    (is (= "http://example.com/path?query=x&y=2#fragment"
-           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \<)))
-    ))
+    (is (= [16 "http://ex.com/"]
+           (parse-iri-ref "<http://ex.com/>" 0 \< nil)))
+    (is (= [46 "http://example.com/path?query=x&y=2#fragment"]
+           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \< nil)))
+    (is (= [20 "http://ex.com/"]
+           (parse-iri-ref "foo <http://ex.com/>" 4 \< nil)))
+    (is (= [50 "http://example.com/path?query=x&y=2#fragment"]
+           (parse-iri-ref "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path query=x&y=2#fragment>" 0 \< nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 1 \h nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment" 0 \< nil)))
+    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))]
+      (is (= [6 "path"] (parse-iri-ref "<path>" 0 \< nil)))
+      (is (= [6 "http://test.org/path"] (parse-iri-ref "<path>" 0 \< g))))))
