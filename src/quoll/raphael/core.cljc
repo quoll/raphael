@@ -78,7 +78,19 @@
       (add-range \u00F8 \u02FF) (add-range \u0370 \u037D) (add-range \u037F \u1FFF)
       (add-range \u200C \u200D) (add-range \u2070 \u218F) (add-range \u2C00 \u2FEF)
       (add-range \u3001 \uD7FF) (add-range \uF900 \uFDCF) (add-range \uFDF0 \uFFFD)))
-      ;;(add-range 0x10000 0xEFFFF) ;; TODO: proxy pairs
+      ;;(add-range 0x10000 0xEFFFF)
+
+(defn high-surrogate?
+  "Tests if a character is both a high surrogate (0xD800 <= c <= 0xDBFF)
+  and also in range (0xD800 <= c <= 0xDB7F) which matches the character range 0x10000 to 0xEFFFF"
+  [c]
+  (<= 0xD800 c 0xDB7F))
+
+(defn low-surrogate?
+  "Tests if a character is a low surrogate (0xDC00 <= c <= 0xDFFF)
+  which matches the character range 0x10000 to 0xEFFFF"
+  [c]
+  (<= 0xDC00 c 0xDFFF))
 
 (def pn-chars-u? (conj pn-chars-base? \_))
 
@@ -153,14 +165,29 @@
         (= \: c) (if (= \. (text/last-char sb))
                    (throw-unex "Unexpected '.' at end of prefix: " s n)
                    [(inc n') (str sb)])
-        (or (and (= n n') (pn-chars-base? c))
-            (and (not= n n') (pn-chars? c))) (let [n' (inc n')] (text/append! sb c) (recur n' (char-at s n')))
-        :default (do
-                   (prn "n=" n)
-                   (prn "n'=" n')
-                   (prn "c=" c " in?" (pn-chars-base? c))
-                   (prn "sb=" (str sb))
-                   (throw-unex "Unexpected character in prefix: " s n))))))
+        (= n n') (cond
+                   (pn-chars-base? c) (let [n' (inc n')]
+                                        (text/append! sb c)
+                                        (recur n' (char-at s n')))
+                   (high-surrogate? c) (let [nn (+ n' 2)
+                                             c2 (char-at s (inc n'))]
+                                         (when-not (low-surrogate? c2)
+                                           (throw-unex "Bad Unicode characters at start of prefix: " s n))
+                                         (text/append! sb c)
+                                         (text/append! sb c2)
+                                         (recur nn (char-at s nn)))
+                   :default (throw-unex "Unexpected character at start of prefix: " s n))
+        (pn-chars? c) (let [n' (inc n')]
+                        (text/append! sb c)
+                        (recur n' (char-at s n')))
+        (high-surrogate? c) (let [nn (+ n' 2)
+                                  c2 (char-at s (inc n'))]
+                              (when-not (low-surrogate? c2)
+                                (throw-unex "Bad Unicode characters in prefix: " s n))
+                              (text/append! sb c)
+                              (text/append! sb c2)
+                              (recur nn (char-at s nn)))
+        :default (throw-unex (str "Unexpected character '" c "' in prefix: ") s n)))))
 
 (defn parse-u-char
   "Parse a code of \\uxxxx or \\Uxxxxxxxx.
