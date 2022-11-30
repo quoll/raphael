@@ -38,3 +38,8 @@
   [s]
   #?(:clj (Long/parseLong s 16)
      :cljs (js/parseInt s 16)))
+
+(defn ssubs
+  "A safe substring function. The same as a 3 argument `subs` but will not run out of range."
+  [s start end]
+  (subs s start (min end (count s))))

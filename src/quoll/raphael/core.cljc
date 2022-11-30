@@ -318,7 +318,7 @@
                          (let [n' (inc n)]
                            (text/append! sb c)
                            (recur n' (char-at n') (dot? c)))
-                         (throw-unex (str "Illegal character '" c "'in prefix: ") s n))))
+                         (throw-unex (str "Illegal character '" c "' in prefix: ") s n))))
         [n c local] (parse-local s n)]
     (qname prefix local gen)))
 
@@ -332,6 +332,14 @@
 
 (defn parse-blank-node-entity
   [s n c gen]
+  )
+
+(defn parse-literal
+  [s n c gen]
+  )
+
+(defn parse-number
+  [s n c]
   )
 
 (defn parse-subject
@@ -362,9 +370,21 @@
   subject - the node for the parsed object.
   triples - the triples generated in parsing the node."
   [s n c gen]
-  ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c gen)
-  )
+  (case c
+    \< (parse-iri-ref s n c gen)
+    \( (parse-collection s n c gen)
+    \_ (parse-blank-node s n c)
+    \[ (parse-blank-node-entity s n c gen)
+    (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c)
+    (\" \') (parse-literal s n c gen)
+    (cond
+      (and (= c \f)
+           (= "alse" (text/ssubs s n (+ n 5)))
+           (not (pn-chars? (char-at s (+ n 5))))) [(+ n 5) false]
+      (and (= c \t)
+           (= "rue" (text/ssubs s n (+ n 4)))
+           (not (pn-chars? (char-at s (+ n 4))))) [(+ n 4) true]
+      :default (parse-prefixed-name s n c gen))))
 
 (defn parse-predicate
   "Parse a predicate entity.
