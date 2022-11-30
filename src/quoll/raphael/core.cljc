@@ -36,11 +36,16 @@
   Object
   (toString [this] (str "_:b" n)))
 
-(defrecord QName [prefix local]
+(defrecord QName [prefix local iri]
   IRI
   (as-iri [this generator] (str (iri-for generator prefix) local))
   Object
   (toString [this] (str prefix ":" local)))
+
+(defn qname
+  "Creates a qname"
+  ([prefix local] (->QName prefix local nil))
+  ([prefix local gen] (->QName prefix local (str (iri-for gen prefix) local))))
 
 (defrecord Generator [counter bnode-cache namespaces]
     NodeGenerator
@@ -72,6 +77,8 @@
 
 (def whitespace? #{\space \tab \return \newline})
 
+(def hex? (-> #{} (add-range \0 \9) (add-range \A \F) (add-range \a \f)))
+
 (def pn-chars-base?
   (-> #{}
       (add-range \A \Z) (add-range \a \z) (add-range \u00C0 \u00D6) (add-range \u00D8 \u00F6)
@@ -101,6 +108,13 @@
       (add-range \u0300 \u036F) (add-range \u203F \u2040)))
 
 (def pn-chars-dot? (conj pn-chars? \.))
+
+(def local-chars? (-> pn-chars-u?
+                      (add-range \0 \9)
+                      (conj \:)
+                      (conj \%)))
+
+(def local-chars2? (conj local-chars? \.))
 
 (def non-iri-char? #{\< \> \" \{ \} \| \^ \` \space :eof})
 
@@ -220,9 +234,9 @@
   n - The offset to parse from.
   c - the first character of the iri reference.
   gen - the current generator
-  return: [n prefix]
+  return: [n iri]
   n - The offset immediately after the prefix.
-  prefix - The iri string."
+  iri - The iri string."
   [s n c gen]
   (when-not (= c \<)
     (throw-unex "Unexpected character commencing an IRI Reference: " s n))
@@ -246,15 +260,78 @@
               (text/append! sb c)
               (recur n' (char-at s n')))))))))
 
+(defn parse-local
+  "Parse a local into a string.
+  s - The string to parse.
+  n - The offset to parse from.
+  return: [n c local]
+  n - the offset immediately after the local name.
+  c - the character at offset n.
+  local - the parsed local name."
+  [s n]
+  (let [sb (text/string-builder)
+        add-char (fn [c n]
+                   (if (= \% c)
+                     (let [a (char-at s (inc n))
+                           b (char-at s (+ n 2))]
+                       (if (and (hex? a) (hex? b))
+                         (do
+                           (text/append! sb c)
+                           (text/append! sb a)
+                           (text/append! sb b)
+                           (+ n 3))
+                         (throw-unex "Bad escape code starting name: " s n)))
+                     (do
+                       (text/append! sb c)
+                       (inc n))))
+        f (char-at s n)
+        _ (when-not (local-chars? f) (throw-unex (str "Unexpected character '" f "' in local name: ") s n))
+        n (add-char f n)]
+    (loop [n n c (char-at s n) dot false]
+      (if (local-chars2? c)
+        (let [n' (add-char c n)]
+          (recur n' (char-at s n') (dot? c)))
+        (if dot
+          (throw-unex "Prefix name illegally ends in a dot: " s n)
+          [n c (str sb)])))))
+
 (defn parse-prefixed-name
   "Parse a prefix:local-name pair.
   s - The string to parse.
   n - The offset to parse from.
   c - the first character of the prefixed name.
-  return: [n prefix]
+  gen - the generator
+  return: [n c prefix]
   n - The offset immediately after the prefixed name.
+  c - The character immediately after the prefixed name.
   qname - The prefixed name as a QName."
-  [s n c]
+  [s n c gen]
+  (when-not (or (pn-chars-base? c) (= \: c))
+    (throw-unex "Prefix char starts with illegal character" s n))
+  (let [sb (text/string-builder)
+        [n prefix] (loop [n n c c dot false]
+                     (if (= \: c)
+                       (if dot
+                         (throw-unex "Prefix illegally ends with a '.': " s n)
+                         [(inc n) (str sb)])
+                       (if (pn-chars-dot? c)
+                         (let [n' (inc n)]
+                           (text/append! sb c)
+                           (recur n' (char-at n') (dot? c)))
+                         (throw-unex (str "Illegal character '" c "'in prefix: ") s n))))
+        [n c local] (parse-local s n)]
+    (qname prefix local gen)))
+
+(defn parse-collection
+  [s n c gen]
+  )
+
+(defn parse-blank-node
+  [s n c gen]
+  )
+
+(defn parse-blank-node-entity
+  [s n c gen]
   )
 
 (defn parse-subject
@@ -268,9 +345,12 @@
   subject - the node for the parsed subject.
   triples - the triples generated in parsing the node."
   [s n c gen]
-  ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c gen)
-  )
+  (case c
+    \< (parse-iri-ref s n c gen)
+    \( (parse-collection s n c gen)
+    \_ (parse-blank-node s n c)
+    \[ (parse-blank-node-entity s n c gen)
+    (parse-prefixed-name s n c gen)))
 
 (defn parse-object
   "Parse an object entity, including any triples.
@@ -376,9 +456,11 @@
                             (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
                             (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
                             :default (throw-unex "Unknown statement: " s n))
-                       (\B \b) (when (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
+                       (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
+                                          (whitespace? (char-at s (+ n 4))))
                                  (parse-base-end s n gen newline? 4))
-                       (\P \p) (when (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
+                       (\P \p) (when (and (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
+                                          (whitespace? (char-at s (+ n 6))))
                                  (parse-prefix-iri-end s n gen newline? 6))
                        nil)]
     (if n'
