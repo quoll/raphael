@@ -135,11 +135,12 @@
   "Skip over the whitespace starting from a position in a string.
   s - The string to read.
   n - The starting position.
+  c - The character at position n.
   return: [n c]
   n - the new offset after skipping whitespace.
   c - the first non-whitespace character, found at position n"
-  [s n]
-  (loop [n n c (char-at s n)]
+  [s n c]
+  (loop [n n c c]
     (if (= :eof c)
       [-1 :eof]
       (if (whitespace? c)
@@ -151,12 +152,13 @@
   "Skip over the whitespace to the required character. If there are nonwhitespace characters, this is an error.
   s - The string to read.
   n - The starting position.
+  c - The character at position n.
   chars - the set of chars to skip to.
   return: [n c]
   n - the new offset after skipping whitespace to the end of the line.
   c - the first non-whitespace character, found at position n"
-  [s n chars]
-  (loop [n n c (char-at s n)]
+  [s n c chars]
+  (loop [n n c c]
     (cond
       (chars c) (let [n' (inc n)]
                   [n' (char-at s n')])
@@ -169,8 +171,8 @@
   s - The string to parse.
   n - The position in the string.
   return: [n c]"
-  [s n]
-  (let [[n c] (skip-whitespace s n)]
+  [s n c]
+  (let [[n c] (skip-whitespace s n c)]
     (if (= \. c)
       (let [n' (inc n)]
         [n' (char-at s n')])
@@ -446,15 +448,16 @@
   triples - the triples generated from parsing this line."
   [s n c gen]
   (let [[n c gen subject-triples] (parse-subject s n c gen)
-        [n c] (skip-whitespace s n)
+        [n c] (skip-whitespace s n c)
         [n c gen predicate-triples] (parse-predicate s n c gen)
-        [n c] (skip-whitespace s n)
+        [n c] (skip-whitespace s n c)
         [n c gen object-triples] (parse-object s n c gen)
         [n c] (skip-past-dot s n)]
     [n c gen (concat subject-triples predicate-triples object-triples)]))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline.
+  NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   s - The string to parse from.
   n - The offset to start the parse from.
   gen - The generator to update.
@@ -465,17 +468,20 @@
   c - character at position n
   gen - the new generator."
   [s n gen end-char skip]
-  (if (whitespace? (char-at s (+ n skip)))
-    (let [[n c] (skip-whitespace s (+ n skip))
-          [n c prefix] (parse-prefix s n c)
-          [n c] (skip-whitespace s n)
-          [n c iri] (parse-iri-ref s n c gen)
-          [n c] (skip-to s n end-char)]
-      [n c (add-prefix gen prefix iri)])
-    (throw-unex "Unknown statement: " s n)))
+  (let [nskip (+ n skip)
+        c (char-at s nskip)]
+    (if (whitespace? c)
+      (let [[n c] (skip-whitespace s nskip c)
+            [n c prefix] (parse-prefix s n c)
+            [n c] (skip-whitespace s n c)
+            [n c iri] (parse-iri-ref s n c gen)
+            [n c] (skip-to s n c end-char)]
+        [n c (add-prefix gen prefix iri)])
+      (throw-unex "Unknown statement: " s n))))
 
 (defn parse-base-end
   "Parse an iri and a dot.
+  NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   s - The string to parse from.
   n - The offset to start the parse from.
   gen - The generator to update.
@@ -486,37 +492,41 @@
   c - character at position n
   gen - the new generator."
   [s n gen end-char skip]
-  (if (whitespace? (char-at s (+ n skip)))
-    (let [[n c] (skip-whitespace s (+ n skip))
-          [n c iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
-          [n c] (skip-to s n end-char)]
-      [n c (add-prefix gen :base iri)])
-    (throw-unex "Unknown statement: " s n)))
+  (let [nskip (+ n skip)
+        c (char-at s nskip)]
+    (if (whitespace? c)
+      (let [[n c] (skip-whitespace s nskip c)
+            [n c iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
+            [n c] (skip-to s n c end-char)]
+        [n c (add-prefix gen :base iri)])
+      (throw-unex "Unknown statement: " s n))))
 
 (defn parse-statement
   "Parse a directive or triples.
   s - The string to parse.
   n - The position in the string to parse from.
+  c - the character at position n. (Optional: can be inferred)
   gen - The current generator.
   return: [n c gen triples]
   n - the new offset after parsing.
   c - the character at position n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  [s n gen]
-  (let [[n c] (skip-whitespace s n)
-        [n' c' gen'] (case c
-                       \@ (cond
-                            (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
-                            (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
-                            :default (throw-unex "Unknown statement: " s n))
-                       (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
-                                          (whitespace? (char-at s (+ n 4))))
-                                 (parse-base-end s n gen newline? 4))
-                       (\P \p) (when (and (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
-                                          (whitespace? (char-at s (+ n 6))))
-                                 (parse-prefix-iri-end s n gen newline? 6))
-                       nil)]
-    (if n'
-      [n' c' gen' nil]
-      (parse-triples s n c gen))))
+  ([s n gen] (parse-statement s n (char-at s n) gen))
+  ([s n c gen]
+   (let [[n c] (skip-whitespace s n c)
+         [n' c' gen'] (case c
+                        \@ (cond
+                             (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
+                             (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
+                             :default (throw-unex "Unknown statement: " s n))
+                        (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
+                                           (whitespace? (char-at s (+ n 4))))
+                                  (parse-base-end s n gen newline? 4))
+                        (\P \p) (when (and (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
+                                           (whitespace? (char-at s (+ n 6))))
+                                  (parse-prefix-iri-end s n gen newline? 6))
+                        nil)]
+     (if n'
+       [n' c' gen' nil]
+       (parse-triples s n c gen)))))

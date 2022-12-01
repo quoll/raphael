@@ -3,27 +3,32 @@
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
                                         parse-iri-ref add-prefix new-generator parse-statement
                                         parse-local parse-prefixed-name
-                                        ->QName]])
+                                        ->QName]]
+            [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
+
+(defn skip-whitespace' [s n] (skip-whitespace s n (char-at s n)))
 
 (deftest ws-test
   (testing "Tests if whitespace is skipped correctly."
-    (is (= [3 \a] (skip-whitespace "   a b" 0)))
-    (is (= [3 \a] (skip-whitespace "   a b" 2)))
-    (is (= [3 \a] (skip-whitespace "   a b" 3)))
-    (is (= [5 \b] (skip-whitespace "   a b" 4)))
-    (is (= [-1 :eof] (skip-whitespace "   a b" 6)))))
+    (is (= [3 \a] (skip-whitespace' "   a b" 0)))
+    (is (= [3 \a] (skip-whitespace' "   a b" 2)))
+    (is (= [3 \a] (skip-whitespace' "   a b" 3)))
+    (is (= [5 \b] (skip-whitespace' "   a b" 4)))
+    (is (= [-1 :eof] (skip-whitespace' "   a b" 6)))))
+
+(defn skip-to' [s n chars] (skip-to s n (char-at s n) chars))
 
 (deftest skip-to-test
   (testing "Testing skipping whitespace to a character"
-    (is (= [4 \space] (skip-to "   . a" 0 dot?)))
-    (is (= [4 \space] (skip-to "   . a" 1 dot?)))
-    (is (= [4 \space] (skip-to "   . a" 3 dot?)))
-    (is (thrown? ExceptionInfo (skip-to "   . a" 4 dot?)))
-    (is (= [4 \space] (skip-to "   \n a" 0 newline?)))
-    (is (= [4 \space] (skip-to "   \n a" 1 newline?)))
-    (is (= [4 \space] (skip-to "   \n a" 3 newline?)))
-    (is (thrown? ExceptionInfo (skip-to "   \n a" 4 newline?)))))
+    (is (= [4 \space] (skip-to' "   . a" 0 dot?)))
+    (is (= [4 \space] (skip-to' "   . a" 1 dot?)))
+    (is (= [4 \space] (skip-to' "   . a" 3 dot?)))
+    (is (thrown? ExceptionInfo (skip-to' "   . a" 4 dot?)))
+    (is (= [4 \space] (skip-to' "   \n a" 0 newline?)))
+    (is (= [4 \space] (skip-to' "   \n a" 1 newline?)))
+    (is (= [4 \space] (skip-to' "   \n a" 3 newline?)))
+    (is (thrown? ExceptionInfo (skip-to' "   \n a" 4 newline?)))))
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
