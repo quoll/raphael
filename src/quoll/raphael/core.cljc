@@ -168,11 +168,12 @@
   "Skip to the terminating dot. If non-whitespace is found, then report an error.
   s - The string to parse.
   n - The position in the string.
-  return: n"
+  return: [n c]"
   [s n]
   (let [[n c] (skip-whitespace s n)]
     (if (= \. c)
-      (inc n)
+      (let [n' (inc n)]
+        [n' (char-at s n')])
       (throw (ex-info (str "Unexpected character found at offset: " n) {:offset n :character c})))))
 
 (defn parse-prefix
@@ -180,8 +181,9 @@
   s - The string to parse.
   n - The offset to parse from.
   c - The character at offset n.
-  return: [n prefix]
+  return: [n c prefix]
   n - The offset immediately after the prefix.
+  c - The character at offset n.
   prefix - The prefix string."
   [s n c]
   (let [sb (text/string-builder)]
@@ -189,7 +191,8 @@
       (cond
         (= \: c) (if (= \. (text/last-char sb))
                    (throw-unex "Unexpected '.' at end of prefix: " s n)
-                   [(inc n') (str sb)])
+                   (let [nn' (inc n')]
+                     [nn' (char-at s nn') (str sb)]))
         (= n n') (cond
                    (pn-chars-base? c) (let [n' (inc n')]
                                         (text/append! sb c)
@@ -256,8 +259,9 @@
         (let [i (str sb)
               iri (if (and gen (relative-iri? i))
                     (if-let [base (iri-for gen :base)] (str base i) i)
-                    i)]
-          [(inc n) iri])
+                    i)
+              n' (inc n)]
+          [n' (char-at s n') iri])
         (if (non-iri-char? c)
           (throw-unex "Unexpected character in IRI: " s n)
           (if (= c \\)
@@ -372,8 +376,9 @@
   n - the offset to parse from.
   c - the char found at position n.
   gen - the node generator.
-  return: [n subject triples]
+  return: [n c subject triples]
   n - the offset immediately after the subject.
+  c - the character at offset n.
   subject - the node for the parsed subject.
   triples - the triples generated in parsing the node."
   [s n c gen]
@@ -389,8 +394,9 @@
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n.
-  return: [n object triples]
+  return: [n c object triples]
   n - the offset immediately after the object.
+  c - the character at offset n.
   subject - the node for the parsed object.
   triples - the triples generated in parsing the node."
   [s n c gen]
@@ -404,10 +410,12 @@
     (cond
       (and (= c \f)
            (= "alse" (text/ssubs s n (+ n 5)))
-           (not (pn-chars? (char-at s (+ n 5))))) [(+ n 5) false]
+           (not (pn-chars? (char-at s (+ n 5))))) (let [n' (+ n 5)]
+                                                    [n' (char-at s n') false])
       (and (= c \t)
            (= "rue" (text/ssubs s n (+ n 4)))
-           (not (pn-chars? (char-at s (+ n 4))))) [(+ n 4) true]
+           (not (pn-chars? (char-at s (+ n 4))))) (let [n' (+ n 4)]
+                                                    [n' (char-at s n') true])
       :default (parse-prefixed-name s n c gen))))
 
 (defn parse-predicate
@@ -416,13 +424,14 @@
   n - the offset to parse from.
   c - the char found at position n.
   gen - the generator to use.
-  return: [n subject]
+  return: [n c subject]
   n - the offset immediately after the predicate.
+  c - the character at offset n.
   predicate - the node for the parsed predicate."
   [s n c gen]
-  ;; TODO: temporarily return an iri ref
-  (parse-iri-ref s n c gen)
-  )
+  (if (= \< c)
+    (parse-iri-ref s n c gen)
+    (parse-prefixed-name s n c gen)))
 
 (defn parse-triples
   "Parse a top level triples from a string.
@@ -430,18 +439,19 @@
   n - the offset in the string to retrieve from.
   c - the character found at position n.
   gen - the generator to use for blank nodes.
-  return: [n gen triples]
+  return: [n c gen triples]
   n - the new offset after parsing.
+  c - the character at offset n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
   [s n c gen]
-  (let [[n gen subject-triples] (parse-subject s n c gen)
+  (let [[n c gen subject-triples] (parse-subject s n c gen)
         [n c] (skip-whitespace s n)
-        [n gen predicate-triples] (parse-predicate s n c gen)
+        [n c gen predicate-triples] (parse-predicate s n c gen)
         [n c] (skip-whitespace s n)
-        [n gen object-triples] (parse-object s n c gen)
-        n (skip-past-dot s n)]
-    [n gen (concat subject-triples predicate-triples object-triples)]))
+        [n c gen object-triples] (parse-object s n c gen)
+        [n c] (skip-past-dot s n)]
+    [n c gen (concat subject-triples predicate-triples object-triples)]))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline.
@@ -457,9 +467,9 @@
   [s n gen end-char skip]
   (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
-          [n prefix] (parse-prefix s n c)
+          [n c prefix] (parse-prefix s n c)
           [n c] (skip-whitespace s n)
-          [n iri] (parse-iri-ref s n c gen)
+          [n c iri] (parse-iri-ref s n c gen)
           [n c] (skip-to s n end-char)]
       [n c (add-prefix gen prefix iri)])
     (throw-unex "Unknown statement: " s n)))
@@ -478,7 +488,7 @@
   [s n gen end-char skip]
   (if (whitespace? (char-at s (+ n skip)))
     (let [[n c] (skip-whitespace s (+ n skip))
-          [n iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
+          [n c iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
           [n c] (skip-to s n end-char)]
       [n c (add-prefix gen :base iri)])
     (throw-unex "Unknown statement: " s n)))

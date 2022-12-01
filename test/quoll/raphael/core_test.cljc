@@ -27,13 +27,13 @@
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
-    (is (= [16 "http://ex.com/"]
+    (is (= [16 :eof "http://ex.com/"]
            (parse-iri-ref "<http://ex.com/>" 0 \< nil)))
-    (is (= [46 "http://example.com/path?query=x&y=2#fragment"]
+    (is (= [46 :eof "http://example.com/path?query=x&y=2#fragment"]
            (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \< nil)))
-    (is (= [20 "http://ex.com/"]
+    (is (= [20 :eof "http://ex.com/"]
            (parse-iri-ref "foo <http://ex.com/>" 4 \< nil)))
-    (is (= [50 "http://example.com/path?query=x&y=2#fragment"]
+    (is (= [50 :eof "http://example.com/path?query=x&y=2#fragment"]
            (parse-iri-ref "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< nil)))
     (is (thrown? ExceptionInfo
                  (parse-iri-ref "<http://example.com/path query=x&y=2#fragment>" 0 \< nil)))
@@ -42,8 +42,8 @@
     (is (thrown? ExceptionInfo
                  (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment" 0 \< nil)))
     (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))]
-      (is (= [6 "path"] (parse-iri-ref "<path>" 0 \< nil)))
-      (is (= [6 "http://test.org/path"] (parse-iri-ref "<path>" 0 \< g))))))
+      (is (= [6 :eof  "path"] (parse-iri-ref "<path>" 0 \< nil)))
+      (is (= [6 :eof "http://test.org/path"] (parse-iri-ref "<path>" 0 \< g))))))
 
 (deftest non-triple-statement-test
   (testing "parsing statements that are not triples"
