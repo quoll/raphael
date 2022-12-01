@@ -23,8 +23,11 @@
   sb - the mutable string builder.
   return: the final char."
   [sb]
-  #?(:clj (.charAt sb (dec (.length sb)))
-     :cljs (let [s (str sb)] (nth s (dec (count sb))))))
+  #?(:clj (let [len (.length sb)] (when (> len 0) (.charAt sb (dec len))))
+     :cljs (let [s (str sb)
+                 len (count sb)]
+             (when (> len 0)
+               (nth s (dec len))))))
 
 (defn char-at
   "Returns the character at a given position in the string,

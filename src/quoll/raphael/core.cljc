@@ -341,10 +341,10 @@
                        (if (pn-chars-dot? c)
                          (let [n' (inc n)]
                            (text/append! sb c)
-                           (recur n' (char-at n') (dot? c)))
+                           (recur n' (char-at s n') (dot? c)))
                          (throw-unex (str "Illegal character '" c "' in prefix: ") s n))))
         [n c local] (parse-local s n)]
-    (qname prefix local gen)))
+    [n c (qname prefix local gen)]))
 
 (defn parse-collection
   [s n c gen]

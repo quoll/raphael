@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest testing is]]
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
                                         parse-iri-ref add-prefix new-generator parse-statement
-                                        parse-local parse-prefixed-name]])
+                                        parse-local parse-prefixed-name
+                                        ->QName]])
   (:import [clojure.lang ExceptionInfo]))
 
 (deftest ws-test
@@ -53,7 +54,9 @@
           [n4 c4 g4 t4] (parse-statement "@prefix t2: <http://test.com/>. \n" 0 g3)
           [n5 c5 g5 t5] (parse-statement "@prefix t\ud800\udd49: <http://atticten.com/>. \n" 0 g4)
           [n6 c6 g6 t6] (parse-statement "@prefix \ud800\udd49x: <http://atticten.com/pre>. \n" 0 g5)
-          [n7 c7 g7 t7] (parse-statement "@prefix \udb7f\udfffx: <http://unicode.com/limit>. \n" 0 g6)]
+          [n7 c7 g7 t7] (parse-statement "@prefix \udb7f\udfffx: <http://unicode.com/limit>. \n" 0 g6)
+          [n8 c8 g8 t8] (parse-statement "@prefix : <http://short.com/>. \n" 0 g7)
+          ]
       (is (= 24 n1))
       (is (= :eof c1))
       (is (= {:base "http://test.org/"} (:namespaces g1)))
@@ -90,6 +93,14 @@
               "\udb7f\udfffx" "http://unicode.com/limit"}
              (:namespaces g7)))
       (is (nil? t7))
+      (is (= 30 n8))
+      (is (= \space c8))
+      (is (= {:base "http://test.com/" "test" "http://test.org/" "t2" "http://test.com/"
+              "t\ud800\udd49" "http://atticten.com/" "\ud800\udd49x" "http://atticten.com/pre"
+              "\udb7f\udfffx" "http://unicode.com/limit" "" "http://short.com/"}
+             (:namespaces g8)))
+      (is (nil? t8))
+
 
       (is (thrown? ExceptionInfo
                    (parse-statement "@prefix \ud800\ud849x: <http://atticten.com/pre>. \n" 0 g5)))
@@ -114,22 +125,28 @@
     (is (thrown? ExceptionInfo (parse-local "alice%bg " 0)))
     (is (thrown? ExceptionInfo (parse-local "alice\\bg " 0)))))
 
-#_(deftest prefixed-name-test
-  (testing "Parsing the local portion of a prefixed name"
-    (is (= [16 "http://ex.com/"]
-           (parse-local-name "alice" 0 \< nil)))
-    (is (= [46 "http://example.com/path?query=x&y=2#fragment"]
-           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \< nil)))
-    (is (= [20 "http://ex.com/"]
-           (parse-iri-ref "foo <http://ex.com/>" 4 \< nil)))
-    (is (= [50 "http://example.com/path?query=x&y=2#fragment"]
-           (parse-iri-ref "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref "<http://example.com/path query=x&y=2#fragment>" 0 \< nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 1 \h nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment" 0 \< nil)))
-    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))]
-      (is (= [6 "path"] (parse-iri-ref "<path>" 0 \< nil)))
-      (is (= [6 "http://test.org/path"] (parse-iri-ref "<path>" 0 \< g))))))
+(deftest prefixed-name-test
+  (testing "Parsing prefixed names"
+    (let [g (-> (new-generator)
+                (add-prefix "ex" "http://ex.com/")
+                (add-prefix "" "http://test.org/")
+                (add-prefix "a-b-c" "http://t1.org/")
+                (add-prefix "a_b" "http://t2.org/")
+                (add-prefix "a.b" "http://t3.org/"))]
+      (is (= [6 \space (->QName "ex" "cat" "http://ex.com/cat")]
+             (parse-prefixed-name "ex:cat " 0 \e g)))
+      (is (= [6 \. (->QName "ex" "cat" "http://ex.com/cat")]
+             (parse-prefixed-name "ex:cat. " 0 \e g)))
+      (is (= [4 \space (->QName "" "cat" "http://test.org/cat")]
+             (parse-prefixed-name ":cat " 0 \: g)))
+      (is (= [4 \. (->QName "" "cat" "http://test.org/cat")]
+             (parse-prefixed-name ":cat. " 0 \: g)))
+      (is (= [9 \space (->QName "a-b-c" "cat" "http://t1.org/cat")]
+             (parse-prefixed-name "a-b-c:cat " 0 \a g)))
+      (is (= [7 \space (->QName "a_b" "cat" "http://t2.org/cat")]
+             (parse-prefixed-name "a_b:cat " 0 \a g)))
+      (is (= [7 \space (->QName "a.b" "cat" "http://t3.org/cat")]
+             (parse-prefixed-name "a.b:cat " 0 \a g)))
+      (is (thrown? ExceptionInfo (parse-prefixed-name "_b:cat " 0 \_ g)))
+      (is (thrown? ExceptionInfo (parse-prefixed-name ".b:cat " 0 \. g)))
+      (is (thrown? ExceptionInfo (parse-prefixed-name "-b:cat " 0 \- g))))))
