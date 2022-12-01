@@ -1,7 +1,8 @@
 (ns quoll.raphael.core-test
   (:require [clojure.test :refer [deftest testing is]]
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
-                                        parse-iri-ref add-prefix new-generator parse-statement]])
+                                        parse-iri-ref add-prefix new-generator parse-statement
+                                        parse-local parse-prefixed-name]])
   (:import [clojure.lang ExceptionInfo]))
 
 (deftest ws-test
@@ -98,3 +99,37 @@
                    (parse-statement "@prefix \udd00\udd49x: <http://atticten.com/pre>. \n" 0 g5)))
       (is (thrown? ExceptionInfo
                    (parse-statement "@prefix \udb80\udc00x: <http://atticten.com/pre>. \n" 0 g5))))))
+
+(deftest local-name-test
+  (testing "Parsing the local portion of a prefixed name"
+    (is (= [5 \space "alice"] (parse-local "alice " 0)))
+    (is (= [6 \space "alice"] (parse-local " alice " 1)))
+    (is (= [5 \. "alice"] (parse-local "alice. " 0)))
+    (is (= [7 \space "alice.b"] (parse-local "alice.b " 0)))
+    (is (= [5 \. "alice"] (parse-local "alice. " 0)))
+    (is (= [9 \space "alice%20b"] (parse-local "alice%20b " 0)))
+    (is (= [8 \space "alice\\!b"] (parse-local "alice\\!b " 0)))
+    (is (= [9 \space "alice\\%ba"] (parse-local "alice\\%ba " 0)))
+    (is (thrown? ExceptionInfo (parse-local "alice%%b " 0)))
+    (is (thrown? ExceptionInfo (parse-local "alice%bg " 0)))
+    (is (thrown? ExceptionInfo (parse-local "alice\\bg " 0)))))
+
+#_(deftest prefixed-name-test
+  (testing "Parsing the local portion of a prefixed name"
+    (is (= [16 "http://ex.com/"]
+           (parse-local-name "alice" 0 \< nil)))
+    (is (= [46 "http://example.com/path?query=x&y=2#fragment"]
+           (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 0 \< nil)))
+    (is (= [20 "http://ex.com/"]
+           (parse-iri-ref "foo <http://ex.com/>" 4 \< nil)))
+    (is (= [50 "http://example.com/path?query=x&y=2#fragment"]
+           (parse-iri-ref "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path query=x&y=2#fragment>" 0 \< nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment>" 1 \h nil)))
+    (is (thrown? ExceptionInfo
+                 (parse-iri-ref "<http://example.com/path?query=x&y=2#fragment" 0 \< nil)))
+    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))]
+      (is (= [6 "path"] (parse-iri-ref "<path>" 0 \< nil)))
+      (is (= [6 "http://test.org/path"] (parse-iri-ref "<path>" 0 \< g))))))

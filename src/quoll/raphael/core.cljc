@@ -104,17 +104,27 @@
 
 (def pn-chars?
   (-> pn-chars-u?
-      (conj \-) (add-range \0 \9) (conj \u00B7)
-      (add-range \u0300 \u036F) (add-range \u203F \u2040)))
+      (conj \-)
+      (add-range \0 \9)
+      (conj \u00B7)
+      (add-range \u0300 \u036F)
+      (add-range \u203F \u2040)))
 
 (def pn-chars-dot? (conj pn-chars? \.))
 
 (def local-chars? (-> pn-chars-u?
                       (add-range \0 \9)
                       (conj \:)
-                      (conj \%)))
+                      (conj \%)
+                      (conj \\)))
 
-(def local-chars2? (conj local-chars? \.))
+(def local-chars2? (-> pn-chars?
+                       (conj \:)
+                       (conj \.)
+                       (conj \%)
+                       (conj \\)))
+
+(def local-esc? #{\_ \~ \. \- \! \$ \& \' \( \) \* \+ \, \; \= \/ \? \# \@ \%})
 
 (def non-iri-char? #{\< \> \" \{ \} \| \^ \` \space :eof})
 
@@ -270,29 +280,43 @@
   local - the parsed local name."
   [s n]
   (let [sb (text/string-builder)
-        add-char (fn [c n]
-                   (if (= \% c)
-                     (let [a (char-at s (inc n))
-                           b (char-at s (+ n 2))]
-                       (if (and (hex? a) (hex? b))
-                         (do
-                           (text/append! sb c)
-                           (text/append! sb a)
-                           (text/append! sb b)
-                           (+ n 3))
-                         (throw-unex "Bad escape code starting name: " s n)))
-                     (do
-                       (text/append! sb c)
-                       (inc n))))
+        add-char (fn [c n]  ;; adds a char, looking ahead if this is an escape sequence
+                   (text/append! sb c)
+                   (case c
+                     \% (let [a (char-at s (inc n))
+                              b (char-at s (+ n 2))]
+                          (if (and (hex? a) (hex? b))
+                            (do
+                              (text/append! sb a)
+                              (text/append! sb b)
+                              (+ n 3))
+                            (throw-unex "Bad escape code in localname: " s n)))
+                     \\ (let [a (char-at s (inc n))]
+                          (if (local-esc? a)
+                            (do
+                              (text/append! sb a)
+                              (+ n 2))
+                            (throw-unex "Bad escape code in localname: " s n)))
+                     (inc n)))
         f (char-at s n)
         _ (when-not (local-chars? f) (throw-unex (str "Unexpected character '" f "' in local name: ") s n))
         n (add-char f n)]
-    (loop [n n c (char-at s n) dot false]
-      (if (local-chars2? c)
-        (let [n' (add-char c n)]
-          (recur n' (char-at s n') (dot? c)))
-        (if dot
-          (throw-unex "Prefix name illegally ends in a dot: " s n)
+    (loop [n n c (char-at s n)]
+      (if (= \. c) ;; at a dot. Check if this is inside a local name or terminating it
+        (let [n' (inc n) ;; look ahead
+              c' (char-at s n')]
+          (if (local-chars2? c')
+            ;; the next character is a valid local name character, so save and continue parsing
+            (do
+              (text/append! sb c) ;; a dot, so don't need to check for PLX (%hh or \ escape)
+              (recur n' c'))
+            ;; no, this must mean the local name ended already, and the dot is terminating a line
+            ;; return the current name, along with the position of the dot
+            [n c (str sb)]))
+        (if (local-chars2? c)
+          ;; a valid local name char, so save and continue
+          (let [n' (add-char c n)]
+            (recur n' (char-at s n')))
           [n c (str sb)])))))
 
 (defn parse-prefixed-name
