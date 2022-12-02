@@ -370,19 +370,38 @@
   [s n c gen]
   )
 
+(def end-mantissa? #{\e \E :eof})
+
 (defn parse-number
   "Parse a numeric literal.
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n.
-  gen - the node generator.
-  return: [n c subject triples]
+  return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
-  subject - the node for the parsed subject.
-  triples - the triples generated in parsing the node."
+  value - the parsed number."
   [s n c]
-  )
+  ;; at a minimum, up-to-dot will be populated by at least a sign, a digit, or a dot
+  (let [up-to-dot (re-find #"[+-]?[0-9]*\.?" (subs s n))
+        nd (+ n (count up-to-dot))
+        [after-dot exp] (re-find #"[0-9]*([eE][+-]?[0-9]+)?" (subs s nd))
+        n' (+ nd (count after-dot))
+        nextc (char-at s n')
+        full-nr (subs s n n')
+        ;; test here to avoid catching an exception in the core parser
+        _ (when (let [frst (.charAt up-to-dot 0)]
+                  (or (and (#{\+ \-} frst)
+                           (let [sec (char-at full-nr 1)]
+                             (or (end-mantissa? sec)
+                                 (and (= \. sec) (end-mantissa? (char-at full-nr 2))))))
+                      (and (= \. frst) (end-mantissa? (char-at full-nr 1)))
+                      (and (nil? exp) (#{\e \E} nextc))))
+            (throw-unex (str "Invalid number: '" full-nr "' in:") s n))
+        nr (if (or (= \. (text/last-char up-to-dot)) (re-find #"[eE]" after-dot))
+             (parse-double full-nr)
+             (parse-long full-nr))]
+    [n' nextc nr]))
 
 (defn parse-subject
   "Parse a subject entity, including any triples.

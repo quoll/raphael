@@ -2,7 +2,7 @@
   (:require [clojure.test :refer [deftest testing is]]
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
                                         parse-iri-ref add-prefix new-generator parse-statement
-                                        parse-local parse-prefixed-name
+                                        parse-local parse-prefixed-name parse-number
                                         ->QName]]
             [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
@@ -155,3 +155,43 @@
       (is (thrown? ExceptionInfo (parse-prefixed-name "_b:cat " 0 \_ g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name ".b:cat " 0 \. g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name "-b:cat " 0 \- g))))))
+
+(defn parse-number' [s n] (parse-number s n (char-at s n)))
+
+(deftest number-test
+  (testing "Parsing numeric literals"
+    (is (= [3 :eof 123] (parse-number' "123" 0)))
+    (is (= [3 \space 123] (parse-number' "123 " 0)))
+    (is (= [4 \space 123] (parse-number' " 123 " 1)))
+    (is (= [1 \space 0] (parse-number' "0 " 0)))
+    (is (= [2 \space 0.0] (parse-number' "0. " 0)))
+    (is (= [5 \space 0.234] (parse-number' "0.234 " 0)))
+    (is (= [4 \space 0.234] (parse-number' ".234 " 0)))
+    (is (= [5 \space 23.4] (parse-number' "23.40 " 0)))
+    (is (= [4 \space 234.0] (parse-number' "234. " 0)))
+    (is (= [4 :eof -123] (parse-number' "-123" 0)))
+    (is (= [4 \space 123] (parse-number' "+123 " 0)))
+    (is (= [5 \space -123] (parse-number' " -123 " 1)))
+    (is (= [2 \space 0] (parse-number' "+0 " 0)))
+    (is (= [3 \space 0.0] (parse-number' "-0. " 0)))
+    (is (= [6 \space 0.234] (parse-number' "+0.234 " 0)))
+    (is (= [5 \space -0.234] (parse-number' "-.234 " 0)))
+    (is (= [6 \space 23.4] (parse-number' "+23.40 " 0)))
+    (is (= [5 \space -234.0] (parse-number' "-234. " 0)))
+    (is (= [6 \space 23.4e2] (parse-number' "23.4e2 " 0)))
+    (is (= [6 \space 234.0e2] (parse-number' "234.e2 " 0)))
+    (is (= [7 \space -234.0e2] (parse-number' "-234.e2 " 0)))
+    (is (= [7 \space -23.4e2] (parse-number' "-23.4e2 " 0)))
+    (is (= [8 \space 0.234e12] (parse-number' "+.234e12 " 0)))
+    (is (= [7 \space 0.234e12] (parse-number' ".234e12 " 0)))
+    (is (= [9 \space 0.234e-12] (parse-number' "+.234e-12 " 0)))
+    (is (= [8 \space 0.234e12] (parse-number' ".234e+12 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' ".e+12 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "+e+12 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "-e+12 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "+.e+12 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "1e- " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "+1e " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "+e1 " 0)))
+    (is (thrown? ExceptionInfo (parse-number' ". " 0)))
+    (is (thrown? ExceptionInfo (parse-number' "-. " 0)))))

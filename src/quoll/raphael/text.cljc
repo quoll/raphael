@@ -25,9 +25,9 @@
   [sb]
   #?(:clj (let [len (.length sb)] (when (> len 0) (.charAt sb (dec len))))
      :cljs (let [s (str sb)
-                 len (count sb)]
+                 len (.-length sb)]
              (when (> len 0)
-               (nth s (dec len))))))
+               (.charAt s (dec len))))))
 
 (defn char-at
   "Returns the character at a given position in the string,
