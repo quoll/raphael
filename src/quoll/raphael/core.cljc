@@ -286,13 +286,13 @@
   local - the parsed local name."
   [s n]
   (let [sb (text/string-builder)
-        add-char (fn [c n]  ;; adds a char, looking ahead if this is an escape sequence
-                   (text/append! sb c)
+        add-char (fn [c n] ;; adds a char, looking ahead if this is an escape sequence
                    (case c
                      \% (let [a (char-at s (inc n))
                               b (char-at s (+ n 2))]
                           (if (and (hex? a) (hex? b))
                             (do
+                              (text/append! sb c)
                               (text/append! sb a)
                               (text/append! sb b)
                               (+ n 3))
@@ -303,7 +303,9 @@
                               (text/append! sb a)
                               (+ n 2))
                             (throw-unex "Bad escape code in localname: " s n)))
-                     (inc n)))
+                     (do
+                       (text/append! sb c)
+                       (inc n))))
         f (char-at s n)
         _ (when-not (local-chars? f) (throw-unex (str "Unexpected character '" f "' in local name: ") s n))
         n (add-char f n)]
@@ -369,6 +371,16 @@
   )
 
 (defn parse-number
+  "Parse a numeric literal.
+  s - the string to parse.
+  n - the offset to parse from.
+  c - the char found at position n.
+  gen - the node generator.
+  return: [n c subject triples]
+  n - the offset immediately after the subject.
+  c - the character at offset n.
+  subject - the node for the parsed subject.
+  triples - the triples generated in parsing the node."
   [s n c]
   )
 
