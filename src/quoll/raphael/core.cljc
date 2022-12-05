@@ -437,57 +437,113 @@
       (parse-u-char s n c)
       (throw-unex (str "Unexpected escape character '" c "' found in literal") s n))))
 
-(defn parse-literal
-  "Parse a literal that starts with a quote character. This also includes the
-  triple quote form that allows for raw unescaped strings.
-  start-q - the remaining 2 characters in a triple-quote.
-  end-rex - a regular expression that captures everything to the end of the string.
+(defn parse-long-string
+  "Parse a triple-quoted string form. Because this is already identified as a triple quote
+  the offset of n and the character represent the first character after the quotes.
+  end-q - the ending quote character to terminate on.
+  s - the string to parse.
+  n - the offset to parse from. After the quotes.
+  c - the char found at position n.
+  return: [n c value]
+  n - the offset immediately after the closing quotes.
+  c - the character at offset n.
+  value - the parsed string."
+  [end-q s n c]
+  (let [sb (text/string-builder)]
+    (loop [n n esc false current (char-at s n)]
+      (let [n' (inc n)
+            next-char (char-at s n')]
+        (if (= end-q current)
+          (if esc
+            (throw-unk "Unexpected escape sequence in long-form string: " s (dec n))
+            (if (= end-q next-char) 
+              (let [n2 (inc n')
+                    c2 (char-at s n2)]
+                (if (= end-q c2)
+                  (let [n3 (inc n2)]
+                    [n3 (char-at s n3) (str sb)])
+                  (do
+                    (text/append! sb \")
+                    (text/append! sb \")
+                    (recur n2 false c2))))
+              (do
+                (text/append! sb \")
+                (recur n' false next-char))))
+          (if esc
+            (let [[n2 c2 ecode] (escape s n' next-char)]
+              (text/append! sb ecode)
+              (recur n2 false c2))
+            (if (= \\ current)
+              (recur n' true next-char)
+              (do
+                (text/append! sb next-char)
+                (recur n' false next-char)))))))))
+
+(defn parse-string
+  "Parse a single-quoted string form.
+  end-q - the ending quote character to terminate on.
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n. This is a quote: either ' or \"
   return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
-  value - the parsed number."
-  [start-q end-rex s n c gen]
-  (let [n (inc n)
+  value - the parsed string."
+  [end-q s n c]
+  (let [sb (text/string-builder)]
+    (loop [n (inc n) esc false current (char-at s n)]
+      (let [n' (inc n)
+            next-char (char-at s n')]
+        (if (= end-q current) ;; end of the string, unless escaped
+          (if esc
+            (do
+              (text/append! sb \")
+              (recur n' false next-char))
+            [n' next-char (str sb)])
+          (if esc
+            (let [[n'' c'' ecode] (escape s n' next-char)]
+              (text/append! sb ecode)
+              (recur n'' false c''))
+            (if (= \\ current)
+              (recur n' true next-char)
+              (do
+                (text/append! sb next-char)
+                (recur n' false next-char)))))))))
+
+(defn parse-literal
+  "Parse a literal that starts with a quote character. This also includes the
+  triple quote form that allows for raw unescaped strings.
+  s - the string to parse.
+  n - the offset to parse from.
+  c - the char found at position n. This is a quote: either ' or \"
+  return: [n c value]
+  n - the offset immediately after the subject.
+  c - the character at offset n.
+  value - the parsed value, in string form if it is plain."
+  [s n c gen]
+  (let [n' (inc n)
+        c' (char-at s n')
         startlong (+ 2 n)
-        [n lit-str] (if (= start-q (subs s n startlong))
-                      (if-let [lit (re-find end-rex (subs s startlong))]
-                        (let [ll (count lit)]
-                          [(+ n ll) (subs lit 0 (- ll 3))])
-                        (throw-unex "Unterminated long string: " s n))
-                      (let [sb (text/string-builder)]
-                        (loop [n n esc false current (char-at s n)]
-                          (let [n' (inc n)]
-                            (if (= c current) ;; end of the string, unless escaped
-                              (if esc
-                                (do
-                                  (text/append! sb \")
-                                  (recur n' false (char-at s n')))
-                                [n' (str sb)])
-                              (let [next-char (char-at s n')]
-                                (if esc
-                                  (let [[n'' c'' ecode] (escape s n' next-char)]
-                                    (text/append! sb ecode)
-                                    (recur n'' false c''))
-                                  (if (= \\ current)
-                                    (recur n' true next-char)
-                                    (do
-                                      (text/append! sb next-char)
-                                      (recur n' false next-char))))))))))
-        ac (char-at s n)]
-    (case ac
+        [n c lit-str] (if (= c' c)
+                        (let [n2 (inc n')
+                              c2 (char-at s n2)]
+                          (if (= c2 c)
+                            [n2 c2 ""]
+                            (let [n3 (inc n2)]
+                              (parse-long-string c s n3 (char-at s n3)))))
+                      (parse-string c s n' c'))]
+    (case c
       \^ (if (= \^ (char-at s (inc n)))
            (let [n2 (+ n 2)
-                 [n' c iri] (parse-iri s n2 (char-at s n2))]
-             [n' c (new-literal lit-str iri)])
+                 [n' c' iri] (parse-iri s n2 (char-at s n2))]
+             [n' c' (new-literal lit-str iri)])
            (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]
            (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
-             [(+ n' (count lang)) c (new-lang-string lit-str lang)]
-             (throw-unex "Bad language tag on literal: " s n)))
-      [n ac lit-str])))
+             (let [end (+ n' (count lang))]
+               [end (char-at s end) (new-lang-string lit-str lang)])
+             (throw-unex "Bad language tag on literal: " s n')))
+      [n c lit-str])))
 
 (def end-mantissa? #{\e \E :eof})
 
@@ -570,8 +626,7 @@
     \_ (parse-blank-node s n c)
     \[ (parse-blank-node-entity s n c gen)
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c)
-    \' (parse-literal "''" #".*?'''" s n c gen)
-    \" (parse-literal "\"\"" #".*?\"\"\"" s n c gen)
+    (\' \") (parse-literal s n c gen)
     (cond
       (and (= c \f)
            (= "alse" (text/ssubs s n (+ n 5)))
