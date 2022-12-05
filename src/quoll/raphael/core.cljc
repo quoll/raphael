@@ -47,6 +47,49 @@
   ([prefix local] (->QName prefix local nil))
   ([prefix local gen] (->QName prefix local (str (iri-for gen prefix) local))))
 
+(defn iri-string
+  "Converts an IRI to a string form for printing"
+  [iri-ref]
+  (if (string? iri-ref)
+    (str \< iri-ref \>)
+    (str iri-ref)))
+
+(def echar-map {\newline "\\n"
+                \return "\\r"
+                \tab "\\t"
+                \formfeed "\\f"
+                \backspace "\\b"
+                \" "\\\""
+                \\ "\\\\"})
+
+(defn escape
+  "Escapes a string for printing"
+  [s]
+  (str \"
+       (-> s
+           (str/replace #"[\n\r\t\f\"\\]" #(echar-map (char-at % 0)))
+           (str/replace "\b" "\\b"))
+       \"))
+
+(defrecord Literal [value lang type]
+  Object
+  (toString [this]
+    (cond
+      lang (str (escape value) \@ lang)
+      type (str (escape value) "^^" (iri-string type))
+      :default (escape value))))
+
+(defn new-literal
+  "Creates a new literal object"
+  ([value] (->Literal value nil nil))
+  ([value type]
+   (->Literal value nil type)))
+
+(defn new-lang-string
+  "Creates a language-tagged literal"
+  [value lang]
+  (->Literal value lang nil))
+
 (defrecord Generator [counter bnode-cache namespaces]
     NodeGenerator
     (new-node [this]
@@ -220,15 +263,15 @@
         :default (throw-unex (str "Unexpected character '" c "' in prefix: ") s n)))))
 
 (defn parse-u-char
-  "Parse a code of \\uxxxx or \\Uxxxxxxxx.
+  "Parse a an unescapped code of uxxxx or Uxxxxxxxx. A preceding \\ character was just parsed.
   s - the string to parse.
   n - the offset within the string to parse from.
+  f - the character found at position n. Must be u or U.
   return: [n char]
   n - the offset immediately after the ucode
   char - the character code that was parsed"
-  [s n]
-  (let [f (char-at s (inc n))
-        end (case f
+  [s n f]
+  (let [end (case f
               \u (+ n 6)
               \U (+ n 10)
               nil)]
@@ -267,7 +310,7 @@
         (if (non-iri-char? c)
           (throw-unex "Unexpected character in IRI: " s n)
           (if (= c \\)
-            (if-let [[n ch] (parse-u-char s n)]
+            (if-let [[n ch] (let [nn (inc n)] (parse-u-char s nn (char-at s nn)))]
               (let [n' (inc n)]
                 (text/append! sb ch)
                 (recur n' (char-at s n')))
@@ -354,21 +397,97 @@
         [n c local] (parse-local s n)]
     [n c (qname prefix local gen)]))
 
-(defn parse-collection
+(defn parse-iri
+  "Parse an iri.
+  s - the string to parse.
+  n - the offset to parse from.
+  c - the char found at position n.
+  gen - the generator to use.
+  return: [n c iri]
+  n - the offset immediately after the iri.
+  c - the character at offset n.
+  iri - the node for the parsed iri. Either an IRI string or a QName."
   [s n c gen]
-  )
+  (if (= \< c)
+    (parse-iri-ref s n c gen)
+    (parse-prefixed-name s n c gen)))
 
-(defn parse-blank-node
-  [s n c gen]
-  )
+(def echars "Maps ascii characters into their escape code"
+  {\b \backspace
+   \t \tab
+   \n \newline
+   \r \return
+   \f \formfeed
+   \\ \\})
 
-(defn parse-blank-node-entity
-  [s n c gen]
-  )
+(defn escape
+  "Reads an escaped code from the input starting at the current position.
+  s - the string to parse
+  n - the position of the beginning of the already escaped sequence (after the \\ character)
+  c - the character at position n
+  return: [n c value]
+  n - the position immediately following the escaped sequence
+  c - the character at n
+  value - the unescaped character"
+  [s n c]
+  (if-let [e (echars c)]
+    (let [n' (inc n)]
+      [n' (char-at s n') e])
+    (if (#{\u \U} c)
+      (parse-u-char s n c)
+      (throw-unex (str "Unexpected escape character '" c "' found in literal") s n))))
 
 (defn parse-literal
-  [s n c gen]
-  )
+  "Parse a literal that starts with a quote character. This also includes the
+  triple quote form that allows for raw unescaped strings.
+  start-q - the remaining 2 characters in a triple-quote.
+  end-rex - a regular expression that captures everything to the end of the string.
+  s - the string to parse.
+  n - the offset to parse from.
+  c - the char found at position n. This is a quote: either ' or \"
+  return: [n c value]
+  n - the offset immediately after the subject.
+  c - the character at offset n.
+  value - the parsed number."
+  [start-q end-rex s n c gen]
+  (let [n (inc n)
+        startlong (+ 2 n)
+        [n lit-str] (if (= start-q (subs s n startlong))
+                      (if-let [lit (re-find end-rex (subs s startlong))]
+                        (let [ll (count lit)]
+                          [(+ n ll) (subs lit 0 (- ll 3))])
+                        (throw-unex "Unterminated long string: " s n))
+                      (let [sb (text/string-builder)]
+                        (loop [n n esc false current (char-at s n)]
+                          (let [n' (inc n)]
+                            (if (= c current) ;; end of the string, unless escaped
+                              (if esc
+                                (do
+                                  (text/append! sb \")
+                                  (recur n' false (char-at s n')))
+                                [n' (str sb)])
+                              (let [next-char (char-at s n')]
+                                (if esc
+                                  (let [[n'' c'' ecode] (escape s n' next-char)]
+                                    (text/append! sb ecode)
+                                    (recur n'' false c''))
+                                  (if (= \\ current)
+                                    (recur n' true next-char)
+                                    (do
+                                      (text/append! sb next-char)
+                                      (recur n' false next-char))))))))))
+        ac (char-at s n)]
+    (case ac
+      \^ (if (= \^ (char-at s (inc n)))
+           (let [n2 (+ n 2)
+                 [n' c iri] (parse-iri s n2 (char-at s n2))]
+             [n' c (new-literal lit-str iri)])
+           (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
+      \@ (let [n' (inc n)]
+           (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
+             [(+ n' (count lang)) c (new-lang-string lit-str lang)]
+             (throw-unex "Bad language tag on literal: " s n)))
+      [n ac lit-str])))
 
 (def end-mantissa? #{\e \E :eof})
 
@@ -385,7 +504,7 @@
   ;; at a minimum, up-to-dot will be populated by at least a sign, a digit, or a dot
   (let [up-to-dot (re-find #"[+-]?[0-9]*\.?" (subs s n))
         nd (+ n (count up-to-dot))
-        [after-dot exp] (re-find #"[0-9]*([eE][+-]?[0-9]+)?" (subs s nd))
+        [after-dot exp] (re-find #"^[0-9]*([eE][+-]?[0-9]+)?" (subs s nd))
         n' (+ nd (count after-dot))
         nextc (char-at s n')
         full-nr (subs s n n')
@@ -402,6 +521,18 @@
              (parse-double full-nr)
              (parse-long full-nr))]
     [n' nextc nr]))
+
+(defn parse-collection
+  [s n c gen]
+  )
+
+(defn parse-blank-node
+  [s n c gen]
+  )
+
+(defn parse-blank-node-entity
+  [s n c gen]
+  )
 
 (defn parse-subject
   "Parse a subject entity, including any triples.
@@ -439,7 +570,8 @@
     \_ (parse-blank-node s n c)
     \[ (parse-blank-node-entity s n c gen)
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c)
-    (\" \') (parse-literal s n c gen)
+    \' (parse-literal "''" #".*?'''" s n c gen)
+    \" (parse-literal "\"\"" #".*?\"\"\"" s n c gen)
     (cond
       (and (= c \f)
            (= "alse" (text/ssubs s n (+ n 5)))
@@ -450,21 +582,6 @@
            (not (pn-chars? (char-at s (+ n 4))))) (let [n' (+ n 4)]
                                                     [n' (char-at s n') true])
       :default (parse-prefixed-name s n c gen))))
-
-(defn parse-predicate
-  "Parse a predicate entity.
-  s - the string to parse.
-  n - the offset to parse from.
-  c - the char found at position n.
-  gen - the generator to use.
-  return: [n c subject]
-  n - the offset immediately after the predicate.
-  c - the character at offset n.
-  predicate - the node for the parsed predicate."
-  [s n c gen]
-  (if (= \< c)
-    (parse-iri-ref s n c gen)
-    (parse-prefixed-name s n c gen)))
 
 (defn parse-triples
   "Parse a top level triples from a string.
@@ -480,11 +597,11 @@
   [s n c gen]
   (let [[n c gen subject-triples] (parse-subject s n c gen)
         [n c] (skip-whitespace s n c)
-        [n c gen predicate-triples] (parse-predicate s n c gen)
+        [n c gen] (parse-iri s n c gen)
         [n c] (skip-whitespace s n c)
         [n c gen object-triples] (parse-object s n c gen)
         [n c] (skip-past-dot s n)]
-    [n c gen (concat subject-triples predicate-triples object-triples)]))
+    [n c gen (concat subject-triples object-triples)]))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline.
