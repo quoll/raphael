@@ -14,7 +14,7 @@
   sb - the string builder.
   data - the data to append in string form.
   return: the string builder (may be ignored since it mutates)"
-  [sb data]
+  [^StringBuilder sb data]
   (.append sb data))
 
 (defn last-char
@@ -22,10 +22,21 @@
   Equivalent to `(last (str sb))` but uses direct calls.
   sb - the mutable string builder.
   return: the final char."
-  [sb]
+  [^StringBuilder sb]
   #?(:clj (let [len (.length sb)] (when (> len 0) (.charAt sb (dec len))))
      :cljs (let [s (str sb)
                  len (.-length sb)]
+             (when (> len 0)
+               (.charAt s (dec len))))))
+
+(defn last-char-str
+  "Returns the last char of a str.
+  Equivalent to `(last s)` but in constant time.
+  s - The string.
+  return: the final char."
+  [^String s]
+  #?(:clj (let [len (.length s)] (when (> len 0) (.charAt s (dec len))))
+     :cljs (let [len (.-length s)]
              (when (> len 0)
                (.charAt s (dec len))))))
 
@@ -46,3 +57,20 @@
   "A safe substring function. The same as a 3 argument `subs` but will not run out of range."
   [s start end]
   (subs s start (min end (count s))))
+
+(defn high-surrogate?
+  "Tests if a character is both a high surrogate (0xD800 <= c <= 0xDBFF)
+  and also in range (0xD800 <= c <= 0xDB7F) which matches the character range 0x10000 to 0xEFFFF"
+  [c]
+  (<= 0xD800 (long c) 0xDB7F))
+
+(defn low-surrogate?
+  "Tests if a character is a low surrogate (0xDC00 <= c <= 0xDFFF)
+  which matches the character range 0x10000 to 0xEFFFF"
+  [c]
+  (<= 0xDC00 (long c) 0xDFFF))
+
+(defn surrogates
+  "Converts a long value to a high/log surrogate pair."
+  [u]
+  [(+ 0xd7c0 (unsigned-bit-shift-right u 10)) (+ 0xDC00 (bit-and u 0x3FF))])

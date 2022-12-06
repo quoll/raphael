@@ -131,18 +131,6 @@
 
 ;; (range 0x10000 0xEFFFF) will be taken care of by the high/low surrogate tests
 
-(defn high-surrogate?
-  "Tests if a character is both a high surrogate (0xD800 <= c <= 0xDBFF)
-  and also in range (0xD800 <= c <= 0xDB7F) which matches the character range 0x10000 to 0xEFFFF"
-  [c]
-  (<= 0xD800 (long c) 0xDB7F))
-
-(defn low-surrogate?
-  "Tests if a character is a low surrogate (0xDC00 <= c <= 0xDFFF)
-  which matches the character range 0x10000 to 0xEFFFF"
-  [c]
-  (<= 0xDC00 (long c) 0xDFFF))
-
 (def pn-chars-u? (conj pn-chars-base? \_))
 
 (def pn-chars?
@@ -242,24 +230,24 @@
                    (pn-chars-base? c) (let [n' (inc n')]
                                         (text/append! sb c)
                                         (recur n' (char-at s n')))
-                   (high-surrogate? c) (let [nn (+ n' 2)
-                                             c2 (char-at s (inc n'))]
-                                         (when-not (low-surrogate? c2)
-                                           (throw-unex "Bad Unicode characters at start of prefix: " s n))
-                                         (text/append! sb c)
-                                         (text/append! sb c2)
-                                         (recur nn (char-at s nn)))
+                   (text/high-surrogate? c) (let [nn (+ n' 2)
+                                                  c2 (char-at s (inc n'))]
+                                              (when-not (text/low-surrogate? c2)
+                                                (throw-unex "Bad Unicode characters at start of prefix: " s n))
+                                              (text/append! sb c)
+                                              (text/append! sb c2)
+                                              (recur nn (char-at s nn)))
                    :default (throw-unex "Unexpected character at start of prefix: " s n))
         (pn-chars? c) (let [n' (inc n')]
                         (text/append! sb c)
                         (recur n' (char-at s n')))
-        (high-surrogate? c) (let [nn (+ n' 2)
-                                  c2 (char-at s (inc n'))]
-                              (when-not (low-surrogate? c2)
-                                (throw-unex "Bad Unicode characters in prefix: " s n))
-                              (text/append! sb c)
-                              (text/append! sb c2)
-                              (recur nn (char-at s nn)))
+        (text/high-surrogate? c) (let [nn (+ n' 2)
+                                       c2 (char-at s (inc n'))]
+                                   (when-not (text/low-surrogate? c2)
+                                     (throw-unex "Bad Unicode characters in prefix: " s n))
+                                   (text/append! sb c)
+                                   (text/append! sb c2)
+                                   (recur nn (char-at s nn)))
         :default (throw-unex (str "Unexpected character '" c "' in prefix: ") s n)))))
 
 (defn parse-u-char
@@ -271,12 +259,14 @@
   n - the offset immediately after the ucode
   char - the character code that was parsed"
   [s n f]
-  (let [end (case f
-              \u (+ n 6)
-              \U (+ n 10)
-              nil)]
-    (when end
-      [end (char (text/parse-hex (subs s (+ n 2) end)))])))
+  (case f
+    \u (let [end (+ n 5)]
+         [end (char-at s end) (char (text/parse-hex (subs s (inc n) end)))])
+    \U (let [end (+ n 9)
+             unicode (text/parse-hex (subs s (inc n) end))
+             [high low] (text/surrogates unicode)]
+         [end (char-at s end) (str (char high) (char low))])
+    (throw-unex "Unexpected non-U character when processing unicode escape" s n)))
 
 ;; A regex to find the scheme at the start of an IRI
 (def scheme-re #"^[A-Za-z][A-Za-z0-9.+-]*:")
@@ -310,10 +300,10 @@
         (if (non-iri-char? c)
           (throw-unex "Unexpected character in IRI: " s n)
           (if (= c \\)
-            (if-let [[n ch] (let [nn (inc n)] (parse-u-char s nn (char-at s nn)))]
-              (let [n' (inc n)]
+            (if-let [[n' c' ch] (let [nn (inc n)] (parse-u-char s nn (char-at s nn)))]
+              (do
                 (text/append! sb ch)
-                (recur n' (char-at s n')))
+                (recur n' c'))
               (throw-unex "Unexpected \\ character in IRI: " s n))
             (let [n' (inc n)]
               (text/append! sb c)
@@ -577,7 +567,7 @@
                       (and (= \. frst) (end-mantissa? (char-at full-nr 1)))
                       (and (nil? exp) (#{\e \E} nextc))))
             (throw-unex (str "Invalid number: '" full-nr "' in:") s n))
-        nr (if (or (= \. (text/last-char up-to-dot)) (re-find #"[eE]" after-dot))
+        nr (if (or (= \. (text/last-char-str up-to-dot)) (re-find #"[eE]" after-dot))
              (parse-double full-nr)
              (parse-long full-nr))]
     [n' nextc nr]))

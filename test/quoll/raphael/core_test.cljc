@@ -202,6 +202,9 @@
     (is (= [13 :eof "hello world"] (parse-string \" "\"hello world\"" 1 \h)))
     (is (= [13 :eof "hello world"] (parse-string \' "'hello world'" 1 \h)))
     (is (= [14 \space "hello\nworld"] (parse-string \" "\"hello\\nworld\" " 1 \h)))
+    (is (= [18 :eof "hello wörld"] (parse-string \' "'hello w\\u00f6rld'" 1 \h)))
+    (is (= [22 :eof "hello w🫤rld"] (parse-string \' "'hello w\\U0001FAE4rld'" 1 \h)))
+    
     ))
 
 (deftest string-literal-test
