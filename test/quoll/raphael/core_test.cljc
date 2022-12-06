@@ -2,7 +2,8 @@
   (:require [clojure.test :refer [deftest testing is]]
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
                                         parse-iri-ref add-prefix new-generator parse-statement
-                                        parse-local parse-prefixed-name parse-number
+                                        parse-local parse-prefixed-name parse-number parse-string
+                                        parse-literal
                                         ->QName]]
             [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
@@ -195,3 +196,13 @@
     (is (thrown? ExceptionInfo (parse-number' "+e1 " 0)))
     (is (thrown? ExceptionInfo (parse-number' ". " 0)))
     (is (thrown? ExceptionInfo (parse-number' "-. " 0)))))
+
+(deftest string-test
+  (testing "Parsing short string literals"
+    (is (= [13 :eof "hello world"] (parse-string \" "\"hello world\"" 1 \h)))
+    ))
+
+(deftest string-literal-test
+  (testing "Parsing string literals"
+    (is (= [13 :eof "hello world"] (parse-literal "\"hello world\"" 0 \" nil)))
+    ))

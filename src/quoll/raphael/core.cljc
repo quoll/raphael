@@ -455,7 +455,7 @@
             next-char (char-at s n')]
         (if (= end-q current)
           (if esc
-            (throw-unk "Unexpected escape sequence in long-form string: " s (dec n))
+            (throw-unex "Unexpected escape sequence in long-form string: " s (dec n))
             (if (= end-q next-char) 
               (let [n2 (inc n')
                     c2 (char-at s n2)]
@@ -484,14 +484,14 @@
   end-q - the ending quote character to terminate on.
   s - the string to parse.
   n - the offset to parse from.
-  c - the char found at position n. This is a quote: either ' or \"
+  c - the char found at position n. This is after the opening quote character.
   return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
   value - the parsed string."
   [end-q s n c]
   (let [sb (text/string-builder)]
-    (loop [n (inc n) esc false current (char-at s n)]
+    (loop [n n esc false current c]
       (let [n' (inc n)
             next-char (char-at s n')]
         (if (= end-q current) ;; end of the string, unless escaped
@@ -507,7 +507,7 @@
             (if (= \\ current)
               (recur n' true next-char)
               (do
-                (text/append! sb next-char)
+                (text/append! sb current)
                 (recur n' false next-char)))))))))
 
 (defn parse-literal
