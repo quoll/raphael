@@ -200,6 +200,8 @@
 (deftest string-test
   (testing "Parsing short string literals"
     (is (= [13 :eof "hello world"] (parse-string \" "\"hello world\"" 1 \h)))
+    (is (= [13 :eof "hello world"] (parse-string \' "'hello world'" 1 \h)))
+    (is (= [14 \space "hello\nworld"] (parse-string \" "\"hello\\nworld\" " 1 \h)))
     ))
 
 (deftest string-literal-test

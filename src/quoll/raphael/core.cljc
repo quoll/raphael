@@ -62,7 +62,7 @@
                 \" "\\\""
                 \\ "\\\\"})
 
-(defn escape
+(defn print-escape
   "Escapes a string for printing"
   [s]
   (str \"
@@ -75,9 +75,9 @@
   Object
   (toString [this]
     (cond
-      lang (str (escape value) \@ lang)
-      type (str (escape value) "^^" (iri-string type))
-      :default (escape value))))
+      lang (str (print-escape value) \@ lang)
+      type (str (print-escape value) "^^" (iri-string type))
+      :default (print-escape value))))
 
 (defn new-literal
   "Creates a new literal object"
@@ -495,20 +495,24 @@
       (let [n' (inc n)
             next-char (char-at s n')]
         (if (= end-q current) ;; end of the string, unless escaped
+          (let [n' (inc n)
+                next-char (char-at s n')]
+            (if esc
+              (do
+                (text/append! sb \")
+                (recur n' false next-char))
+              [n' next-char (str sb)]))
           (if esc
-            (do
-              (text/append! sb \")
-              (recur n' false next-char))
-            [n' next-char (str sb)])
-          (if esc
-            (let [[n'' c'' ecode] (escape s n' next-char)]
+            (let [[n'' c'' ecode] (escape s n current)]
               (text/append! sb ecode)
               (recur n'' false c''))
-            (if (= \\ current)
-              (recur n' true next-char)
-              (do
-                (text/append! sb current)
-                (recur n' false next-char)))))))))
+            (let [n' (inc n)
+                  next-char (char-at s n')]
+              (if (= \\ current)
+                (recur n' true next-char)
+                (do
+                  (text/append! sb current)
+                  (recur n' false next-char))))))))))
 
 (defn parse-literal
   "Parse a literal that starts with a quote character. This also includes the
