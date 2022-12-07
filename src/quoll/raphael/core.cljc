@@ -425,7 +425,7 @@
       [n' (char-at s n') e])
     (if (#{\u \U} c)
       (parse-u-char s n c)
-      (throw-unex (str "Unexpected escape character '" c "' found in literal") s n))))
+      (throw-unex (str "Unexpected escape character <" c "> found in literal: ") s n))))
 
 (defn parse-long-string
   "Parse a triple-quoted string form. Because this is already identified as a triple quote
@@ -441,32 +441,49 @@
   [end-q s n c]
   (let [sb (text/string-builder)]
     (loop [n n esc false current (char-at s n)]
-      (let [n' (inc n)
-            next-char (char-at s n')]
-        (if (= end-q current)
-          (if esc
-            (throw-unex "Unexpected escape sequence in long-form string: " s (dec n))
+      (cond
+        (= end-q current)
+        (if esc
+          (throw-unex "Unexpected escape sequence in long-form string: " s (dec n))
+          (let [n' (inc n)
+                next-char (char-at s n')
+                n2 (inc n')
+                c2 (char-at s n2)]
             (if (= end-q next-char) 
-              (let [n2 (inc n')
-                    c2 (char-at s n2)]
+              (let [n3 (inc n2)
+                    c3 (char-at s n3)]
                 (if (= end-q c2)
-                  (let [n3 (inc n2)]
-                    [n3 (char-at s n3) (str sb)])
+                  [n3 c3 (str sb)]
+                  (do  ;; third character was not a third quote
+                    (text/append! sb current)
+                    (text/append! sb next-char)
+                    (if (= \\ c2)
+                      (recur n3 true c3)
+                      (do
+                        (text/append! sb c2)
+                        (recur n3 false c3))))))
+              (do  ;; second character was not a second quote
+                (text/append! sb current)
+                (if (= \\ next-char)
+                  (recur n2 true c2)
                   (do
-                    (text/append! sb \")
-                    (text/append! sb \")
-                    (recur n2 false c2))))
-              (do
-                (text/append! sb \")
-                (recur n' false next-char))))
-          (if esc
-            (let [[n2 c2 ecode] (escape s n' next-char)]
-              (text/append! sb ecode)
-              (recur n2 false c2))
+                    (text/append! sb next-char)
+                    (recur n2 false c2)))))))
+
+        (= :eof current)
+        (throw-unex "Improperly terminated long literal: " s n)
+
+        :default
+        (if esc
+          (let [[n2 c2 ecode] (escape s n current)]
+            (text/append! sb ecode)
+            (recur n2 false c2))
+          (let [n' (inc n)
+                next-char (char-at s n')]
             (if (= \\ current)
               (recur n' true next-char)
               (do
-                (text/append! sb next-char)
+                (text/append! sb current)
                 (recur n' false next-char)))))))))
 
 (defn parse-string
@@ -482,27 +499,31 @@
   [end-q s n c]
   (let [sb (text/string-builder)]
     (loop [n n esc false current c]
-      (let [n' (inc n)
-            next-char (char-at s n')]
-        (if (= end-q current) ;; end of the string, unless escaped
+      (cond
+        (= end-q current) ;; end of the string, unless escaped
+        (let [n' (inc n)
+              next-char (char-at s n')]
+          (if esc
+            (do
+              (text/append! sb current)
+              (recur n' false next-char))
+            [n' next-char (str sb)]))
+
+        (= :eof current)
+        (throw-unex "Improperly terminated literal: " s n)
+
+        :default
+        (if esc
+          (let [[n2 c2 ecode] (escape s n current)]
+            (text/append! sb ecode)
+            (recur n2 false c2))
           (let [n' (inc n)
                 next-char (char-at s n')]
-            (if esc
+            (if (= \\ current)
+              (recur n' true next-char)
               (do
-                (text/append! sb \")
-                (recur n' false next-char))
-              [n' next-char (str sb)]))
-          (if esc
-            (let [[n'' c'' ecode] (escape s n current)]
-              (text/append! sb ecode)
-              (recur n'' false c''))
-            (let [n' (inc n)
-                  next-char (char-at s n')]
-              (if (= \\ current)
-                (recur n' true next-char)
-                (do
-                  (text/append! sb current)
-                  (recur n' false next-char))))))))))
+                (text/append! sb current)
+                (recur n' false next-char)))))))))
 
 (defn parse-literal
   "Parse a literal that starts with a quote character. This also includes the
@@ -522,14 +543,14 @@
                         (let [n2 (inc n')
                               c2 (char-at s n2)]
                           (if (= c2 c)
-                            [n2 c2 ""]
                             (let [n3 (inc n2)]
-                              (parse-long-string c s n3 (char-at s n3)))))
-                      (parse-string c s n' c'))]
+                              (parse-long-string c s n3 (char-at s n3)))
+                            [n2 c2 ""]))
+                        (parse-string c s n' c'))]
     (case c
       \^ (if (= \^ (char-at s (inc n)))
            (let [n2 (+ n 2)
-                 [n' c' iri] (parse-iri s n2 (char-at s n2))]
+                 [n' c' iri] (parse-iri s n2 (char-at s n2) gen)]
              [n' c' (new-literal lit-str iri)])
            (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]

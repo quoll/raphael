@@ -3,8 +3,8 @@
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
                                         parse-iri-ref add-prefix new-generator parse-statement
                                         parse-local parse-prefixed-name parse-number parse-string
-                                        parse-literal
-                                        ->QName]]
+                                        parse-long-string parse-literal
+                                        new-lang-string new-literal ->QName]]
             [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
 
@@ -199,15 +199,57 @@
 
 (deftest string-test
   (testing "Parsing short string literals"
+    (is (= [2 :eof ""] (parse-string \" "\"\"" 1 \")))
     (is (= [13 :eof "hello world"] (parse-string \" "\"hello world\"" 1 \h)))
     (is (= [13 :eof "hello world"] (parse-string \' "'hello world'" 1 \h)))
     (is (= [14 \space "hello\nworld"] (parse-string \" "\"hello\\nworld\" " 1 \h)))
+    (is (= [17 \space "hello \"world\""] (parse-string \" "\"hello \\\"world\\\"\" " 1 \h)))
+    (is (= [17 \space "hello 'world'"] (parse-string \' "'hello \\'world\\'' " 1 \h)))
     (is (= [18 :eof "hello wörld"] (parse-string \' "'hello w\\u00f6rld'" 1 \h)))
     (is (= [22 :eof "hello w🫤rld"] (parse-string \' "'hello w\\U0001FAE4rld'" 1 \h)))
-    
-    ))
+    (is (thrown? ExceptionInfo (parse-string \' "'hello w\\U0001FAE4rld\" " 1 \h)))))
+
+(deftest long-string-test
+  (testing "Parsing short string literals"
+    (is (= [6 :eof ""] (parse-long-string \" "\"\"\"\"\"\"" 3 \")))
+    (is (= [17 :eof "hello world"] (parse-long-string \" "\"\"\"hello world\"\"\"" 3 \h)))
+    (is (= [17 :eof "hello world"] (parse-long-string \' "'''hello world'''" 3 \h)))
+    (is (= [18 \space "hello\nworld"] (parse-long-string \" "\"\"\"hello\\nworld\"\"\" " 3 \h)))
+    (is (= [20 \space "hello \"world\" "] (parse-long-string \" "\"\"\"hello \"world\" \"\"\" " 3 \h)))
+    (is (= [20 \space "hello 'world' "] (parse-long-string \' "'''hello 'world' ''' " 3 \h)))
+    (is (= [18 \' "hello 'world"] (parse-long-string \' "'''hello 'world'''' " 3 \h)))
+    (is (= [22 :eof "hello wörld"] (parse-long-string \' "'''hello w\\u00f6rld'''" 3 \h)))
+    (is (= [26 :eof "hello w🫤rld"] (parse-long-string \' "'''hello w\\U0001FAE4rld'''" 3 \h)))
+    (is (= [25 :eof "hello '' wörld"] (parse-long-string \' "'''hello '' w\\u00f6rld'''" 3 \h)))
+    (is (thrown? ExceptionInfo (parse-long-string \' "'''hello w\\U0001FAE4rld\"'' " 3 \h)))))
+
+
+(defn parse-literal'
+  ([s] (parse-literal s 0 (char-at s 0) nil))
+  ([s n] (parse-literal s n (char-at s n) nil)))
+
+(defn parse-literal-gen
+  [s g]
+  (parse-literal s 0 (char-at s 0) g))
 
 (deftest string-literal-test
   (testing "Parsing string literals"
-    (is (= [13 :eof "hello world"] (parse-literal "\"hello world\"" 0 \" nil)))
-    ))
+    (is (= [2 :eof ""] (parse-literal' "\"\"")))
+    (is (= [3 :eof ""] (parse-literal' " \"\"" 1)))
+    (is (= [13 :eof "hello world"] (parse-literal' "\"hello world\"")))
+    (is (= [17 :eof "hello world"] (parse-literal' "\"\"\"hello world\"\"\"")))
+    (is (= [17 :eof "hello world"] (parse-literal' "'''hello world'''")))
+    (is (= [18 \space "hello\nworld"] (parse-literal' "\"\"\"hello\\nworld\"\"\" ")))
+    (is (= [20 \space "hello \"world\" "] (parse-literal' "\"\"\"hello \"world\" \"\"\" ")))
+    (is (= [20 \space "hello 'world' "] (parse-literal' "'''hello 'world' ''' ")))
+    (is (= [18 \' "hello 'world"] (parse-literal' "'''hello 'world'''' ")))
+    (is (= [22 :eof "hello wörld"] (parse-literal' "'''hello w\\u00f6rld'''")))
+    (is (= [26 :eof "hello w🫤rld"] (parse-literal' "'''hello w\\U0001FAE4rld'''")))
+    (is (= [25 :eof "hello '' wörld"] (parse-literal' "'''hello '' w\\u00f6rld'''")))
+    (is (= [16 :eof (new-lang-string "hello world" "en")] (parse-literal' "\"hello world\"@en")))
+    (is (= [19 \space (new-lang-string "hello world" "en-uk")] (parse-literal' "\"hello world\"@en-uk ")))
+    (let [g (-> (new-generator) (add-prefix "xsd" "http://xsd.org/"))]
+      (is (= [38 :eof (new-literal "hello world" "http://xsd.org/string")]
+             (parse-literal-gen "\"hello world\"^^<http://xsd.org/string>" g)))
+      (is (= [25 :eof (new-literal "hello world" (->QName "xsd" "string" "http://xsd.org/string"))]
+             (parse-literal-gen "\"hello world\"^^xsd:string" g))))))
