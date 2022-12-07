@@ -602,8 +602,24 @@
   )
 
 (defn parse-blank-node-entity
-  [s n c gen]
-  )
+  "Parse a blank node property/value list.
+  s - The string to parse from
+  n - The offset in the string to start at.
+  c - The character at position n
+  gen - The generator for blank nodes and namespace resolution
+  triples - An accumulating transient of triples.
+  return [n c node gen triples]
+  n - the new parse position
+  c - the character at position n
+  node - the root blank node that is being parsed
+  gen - the updated generator
+  triples - the updated triples sequence
+  more? - indicates if this must be followed by a predicateObject sequence
+          if it is a subject. false."
+  [s n c gen triples more?]
+  (let [[gen node] (new-node gen)
+        [n c gen triples] (parse-predicate-object-list s n c node gen triples)]
+    [n c node gen triples false]))
 
 (defn parse-subject
   "Parse a subject entity, including any triples.
@@ -653,18 +669,42 @@
                                                     [n' (char-at s n') true])
       :default (parse-prefixed-name s n c gen))))
 
+(defn anon-blank-node
+  "Generates a new blank node with no properties. Steps to the next position.
+  s - The string to parse. Unread.
+  n - The position in the string.
+  c - The character at position n. This must be a ]
+  g - The generator.
+  return: [n c node triples more?]
+  n - The next character position after the blank node.
+  c - the character found at n
+  node - the new anonymous blank node
+  more? - If this is a subject, then will more properties appear for it. Always true."
+  [s n c g]
+  (let [n' (inc n)
+        [g node] (new-node g)]
+    [n' (char-at s n') gen node true]))
+
 (defn parse-triples
   "Parse a top level triples from a string.
   s - the string to parse from.
   n - the offset in the string to retrieve from.
   c - the character found at position n.
   gen - the generator to use for blank nodes.
+  triples - A transient vector of triples.
   return: [n c gen triples]
   n - the new offset after parsing.
   c - the character at offset n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  [s n c gen]
+  [s n c gen triples]
+  ;; TODO: This is actually a subject, then a list of predicate/objects
+  (let [
+        [n c subject triples more?] (if (= \[ c)
+                                      (let [[n c] (skip-whitespace s n c)]
+                                        (if (= \] c)
+                                          (anon-blank-node s n c gen)
+                                          (parse-blank-node-entity s n c gen triples))))])
   (let [[n c gen subject-triples] (parse-subject s n c gen)
         [n c] (skip-whitespace s n c)
         [n c gen] (parse-iri s n c gen)
