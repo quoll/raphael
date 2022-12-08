@@ -133,6 +133,8 @@
 
 (def pn-chars-u? (conj pn-chars-base? \_))
 
+(def pn-chars-ud? (add-range pn-chars-u? \0 \9))
+
 (def pn-chars?
   (-> pn-chars-u?
       (conj \-)
@@ -620,8 +622,35 @@
   )
 
 (defn parse-blank-node
+  "Parses a blank node label.
+  s - The string to parse.
+  n - The offset to parse from.
+  c - the first character of the blank node
+  gen - the current generator
+  triples - the current triples
+  return: [n c node gen triples]
+  n - The offset immediately after the prefix.
+  c - the character at offset n.
+  iri - The iri string.
+  gen - the generator.
+  triples - the current triples."
   [s n c gen triples]
-  )
+  (when-not (= \: (char-at s (inc n)))
+    (throw-unex "Illegal underscore (_) at start of symbol: " s n))
+  (let [sb (string-builder)
+        c (char-at s (+ n 2))
+        _ (when-not (pn-chars-ud? c)
+            (throw-unex "Illegal character at start of blank node label: " s n))
+        [n c label] (loop [n (+ 3 n) c (char-at s n) dot false]
+                      (if (pn-chars-dot? c)
+                        (let [n' (inc n)]
+                          (text/append! sb c)
+                          (recur n' (char-at s n') (dot? c)))
+                        (if dot
+                          (throw-unex "blank node illegally ends with a '.': " s n)
+                          [n c (str sb)])))
+        [gen node] (new-node gen label)]
+    [n c node gen triples]))
 
 (def end-list? #{\] \.})
 
