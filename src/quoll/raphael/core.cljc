@@ -282,10 +282,14 @@
   n - The offset to parse from.
   c - the first character of the iri reference.
   gen - the current generator
-  return: [n iri]
+  triples - the current triples
+  return: [n c iri gen triples]
   n - The offset immediately after the prefix.
-  iri - The iri string."
-  [s n c gen]
+  c - the character at offset n.
+  iri - The iri string.
+  gen - the generator.
+  triples - the current triples."
+  [s n c gen triples]
   (when-not (= c \<)
     (throw-unex "Unexpected character commencing an IRI Reference: " s n))
   (let [sb (text/string-builder)]
@@ -296,7 +300,7 @@
                     (if-let [base (iri-for gen :base)] (str base i) i)
                     i)
               n' (inc n)]
-          [n' (char-at s n') iri])
+          [n' (char-at s n') iri gen triples])
         (if (non-iri-char? c)
           (throw-unex "Unexpected character in IRI: " s n)
           (if (= c \\)
@@ -366,11 +370,14 @@
   n - The offset to parse from.
   c - the first character of the prefixed name.
   gen - the generator
+  triples - the current triples.
   return: [n c prefix]
   n - The offset immediately after the prefixed name.
   c - The character immediately after the prefixed name.
-  qname - The prefixed name as a QName."
-  [s n c gen]
+  qname - The prefixed name as a QName.
+  gen - the updated generator.
+  triples - the triples generated in parsing the node."
+  [s n c gen triples]
   (when-not (or (pn-chars-base? c) (= \: c))
     (throw-unex "Prefix char starts with illegal character" s n))
   (let [sb (text/string-builder)
@@ -385,7 +392,7 @@
                            (recur n' (char-at s n') (dot? c)))
                          (throw-unex (str "Illegal character '" c "' in prefix: ") s n))))
         [n c local] (parse-local s n)]
-    [n c (qname prefix local gen)]))
+    [n c (qname prefix local gen) gen triples]))
 
 (defn parse-iri
   "Parse an iri.
@@ -393,14 +400,17 @@
   n - the offset to parse from.
   c - the char found at position n.
   gen - the generator to use.
+  triples - the current triples.
   return: [n c iri]
   n - the offset immediately after the iri.
   c - the character at offset n.
-  iri - the node for the parsed iri. Either an IRI string or a QName."
-  [s n c gen]
+  iri - the node for the parsed iri. Either an IRI string or a QName.
+  gen - the updated generator.
+  triples - the triples generated in parsing the node."
+  [s n c gen triples]
   (if (= \< c)
-    (parse-iri-ref s n c gen)
-    (parse-prefixed-name s n c gen)))
+    (parse-iri-ref s n c gen triples)
+    (parse-prefixed-name s n c gen triples)))
 
 (def echars "Maps ascii characters into their escape code"
   {\b \backspace
@@ -418,7 +428,7 @@
   return: [n c value]
   n - the position immediately following the escaped sequence
   c - the character at n
-  value - the unescaped character"
+  value - the unescaped character."
   [s n c]
   (if-let [e (echars c)]
     (let [n' (inc n)]
@@ -434,10 +444,12 @@
   s - the string to parse.
   n - the offset to parse from. After the quotes.
   c - the char found at position n.
+  c - the char found at position n.
+  gen - the node generator.
   return: [n c value]
   n - the offset immediately after the closing quotes.
   c - the character at offset n.
-  value - the parsed string."
+  value - the parsed string. "
   [end-q s n c]
   (let [sb (text/string-builder)]
     (loop [n n esc false current (char-at s n)]
@@ -492,10 +504,12 @@
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n. This is after the opening quote character.
+  gen - the node generator.
+  triples - the current triples.
   return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
-  value - the parsed string."
+  value - the parsed string. "
   [end-q s n c]
   (let [sb (text/string-builder)]
     (loop [n n esc false current c]
@@ -531,11 +545,15 @@
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n. This is a quote: either ' or \"
+  gen - the node generator.
+  triples - the current triples.
   return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
-  value - the parsed value, in string form if it is plain."
-  [s n c gen]
+  value - the parsed value, in string form if it is plain.
+  gen - the updated generator.
+  triples - the triples generated in parsing the node."
+  [s n c gen triples]
   (let [n' (inc n)
         c' (char-at s n')
         startlong (+ 2 n)
@@ -550,15 +568,15 @@
     (case c
       \^ (if (= \^ (char-at s (inc n)))
            (let [n2 (+ n 2)
-                 [n' c' iri] (parse-iri s n2 (char-at s n2) gen)]
-             [n' c' (new-literal lit-str iri)])
+                 [n' c' iri gen triples] (parse-iri s n2 (char-at s n2) gen triples)]
+             [n' c' (new-literal lit-str iri) gen triples])
            (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]
            (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
              (let [end (+ n' (count lang))]
-               [end (char-at s end) (new-lang-string lit-str lang)])
+               [end (char-at s end) (new-lang-string lit-str lang) gen triples])
              (throw-unex "Bad language tag on literal: " s n')))
-      [n c lit-str])))
+      [n c lit-str gen triples])))
 
 (def end-mantissa? #{\e \E :eof})
 
@@ -567,11 +585,15 @@
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n.
+  gen - the node generator.
+  triples - the current triples.
   return: [n c value]
   n - the offset immediately after the subject.
   c - the character at offset n.
-  value - the parsed number."
-  [s n c]
+  value - the parsed number.
+  gen - the updated generator
+  triples - the triples generated in parsing the node."
+  [s n c gen triples]
   ;; at a minimum, up-to-dot will be populated by at least a sign, a digit, or a dot
   (let [up-to-dot (re-find #"[+-]?[0-9]*\.?" (subs s n))
         nd (+ n (count up-to-dot))
@@ -591,15 +613,84 @@
         nr (if (or (= \. (text/last-char-str up-to-dot)) (re-find #"[eE]" after-dot))
              (parse-double full-nr)
              (parse-long full-nr))]
-    [n' nextc nr]))
+    [n' nextc nr gen triples]))
 
 (defn parse-collection
-  [s n c gen]
+  [s n c gen triples]
   )
 
 (defn parse-blank-node
-  [s n c gen]
+  [s n c gen triples]
   )
+
+(def end-list? #{\] \.})
+
+(defn maybe-parse-predicate
+  "Parses an IRI as a predicate if one is available. Otherwise return a nil as the IRI.
+  s - The string to parse.
+  n - The offset to parse from.
+  c - the first character of the iri reference.
+  gen - the current generator
+  triples - the current triples
+  return: [n c iri gen triples]
+  n - The offset immediately after the prefix.
+  c - the character at offset n.
+  iri - The iri string.
+  gen - the generator.
+  triples - the current triples."
+  [s n c gen triples]
+  (if (end-list? c)
+    [n c nil gen triples]
+    (parse-iri s n c gen triples)))
+
+(declare parse-predicate parse-object)
+
+(defn parse-predicate-object-list
+  "Parse a predicate-object list
+  s - The string to parse from
+  n - The offset in the string to start at.
+  c - The character at position n
+  gen - The generator for blank nodes and namespace resolution
+  triples - An accumulating transient of triples.
+  return [n c gen triples]
+  n - the new parse position
+  c - the character at position n
+  gen - the updated generator
+  triples - the updated triples sequence."
+  [s n c subject gen triples]
+  (loop [[n c pred gen triples] (maybe-parse-predicate s n c gen triples)]
+    (if-not pred
+      [n c subject gen triples]
+      (let [[n c] (skip-whitespace s n c)
+            [n c gen triples] (loop [[n c obj gen triples] (parse-object s n c gen triples)]
+                                (let [[n c] (skip-whitespace s n c)
+                                      triples (conj! triples [subject pred obj])]
+                                  (case c
+                                    (\] \. \;) [n c gen triples]
+                                    \, (recur (parse-object s n c gen triples))
+                                    (throw-unex "Unexpected separator in predicate-object list: " s n))))]
+        (if (= c \;)
+          (recur (parse-predicate s n c gen triples))
+          [n c gen triples])))))
+
+(defn anon-blank-node
+  "Generates a new blank node with no properties. Steps to the next position.
+  s - The string to parse. Unread.
+  n - The position in the string.
+  c - The character at position n. This must be a ]
+  g - The generator.
+  triples - An accumulating transient of triples.
+  return: [n c node gen triples more?]
+  n - The next character position after the blank node.
+  c - the character found at n
+  node - the new anonymous blank node
+  gen - the updated generator
+  triples - the updated triples sequence
+  enf? - If this is a subject, then is this is not enough and properties are required. Always false."
+  [s n c g triples]
+  (let [n' (inc n)
+        [g node] (new-node g)]
+    [n' (char-at s n') node g triples false]))
 
 (defn parse-blank-node-entity
   "Parse a blank node property/value list.
@@ -614,12 +705,15 @@
   node - the root blank node that is being parsed
   gen - the updated generator
   triples - the updated triples sequence
-  more? - indicates if this must be followed by a predicateObject sequence
-          if it is a subject. false."
+  enf? - is this enough if this is a subject? A predicateObject sequence is not needed. true."
   [s n c gen triples more?]
   (let [[gen node] (new-node gen)
-        [n c gen triples] (parse-predicate-object-list s n c node gen triples)]
-    [n c node gen triples false]))
+        [n c gen triples] (parse-predicate-object-list s n c node gen triples)
+        [n c] (skip-whitespace s n c)]
+    (if (= c \])
+      (let [n' (inc n)]
+        [n' (char-at s n') node gen triples true])
+      (throw-unex "Structured blank node entity improperly terminated: " s n))))
 
 (defn parse-subject
   "Parse a subject entity, including any triples.
@@ -627,63 +721,58 @@
   n - the offset to parse from.
   c - the char found at position n.
   gen - the node generator.
+  triples - the current triples.
   return: [n c subject triples]
   n - the offset immediately after the subject.
   c - the character at offset n.
   subject - the node for the parsed subject.
-  triples - the triples generated in parsing the node."
-  [s n c gen]
+  gen - the updated generator
+  triples - the triples generated in parsing the node.
+  enf? - indicates if this subject is enough and a predicateObject list is not needed.
+         Most types return nil for this (falsey)."
+  [s n c gen triples]
   (case c
-    \< (parse-iri-ref s n c gen)
-    \( (parse-collection s n c gen)
-    \_ (parse-blank-node s n c)
-    \[ (parse-blank-node-entity s n c gen)
-    (parse-prefixed-name s n c gen)))
+    \< (parse-iri-ref s n c gen triples)
+    \( (parse-collection s n c gen triples)
+    \_ (parse-blank-node s n c gen triples)
+    \[ (let [[n c] (skip-whitespace s n c)]
+         (if (= \] c)
+           (anon-blank-node s n c gen triples)
+           (parse-blank-node-entity s n c gen triples)))
+    (parse-prefixed-name s n c gen triples)))
 
 (defn parse-object
   "Parse an object entity, including any triples.
   s - the string to parse.
   n - the offset to parse from.
   c - the char found at position n.
-  return: [n c object triples]
+  gen - the node generator.
+  triples - the current triples.
+  return: [n c object gen triples]
   n - the offset immediately after the object.
   c - the character at offset n.
-  subject - the node for the parsed object.
-  triples - the triples generated in parsing the node."
-  [s n c gen]
+  object - the node for the parsed object.
+  gen - the updated generator.
+  triples - the triples generated in parsing the node.
+  Blank node entities can also return a true at the end of the vector, but this should be ignored."
+  [s n c gen triples]
   (case c
-    \< (parse-iri-ref s n c gen)
-    \( (parse-collection s n c gen)
-    \_ (parse-blank-node s n c)
-    \[ (parse-blank-node-entity s n c gen)
-    (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c)
-    (\' \") (parse-literal s n c gen)
+    \< (parse-iri-ref s n c gen triples)
+    \( (parse-collection s n c gen triples)
+    \_ (parse-blank-node s n c gen triples)
+    \[ (parse-blank-node-entity s n c gen triples)
+    (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c gen triples)
+    (\' \") (parse-literal s n c gen triples)
     (cond
       (and (= c \f)
            (= "alse" (text/ssubs s n (+ n 5)))
            (not (pn-chars? (char-at s (+ n 5))))) (let [n' (+ n 5)]
-                                                    [n' (char-at s n') false])
+                                                    [n' (char-at s n') false gen triples])
       (and (= c \t)
            (= "rue" (text/ssubs s n (+ n 4)))
            (not (pn-chars? (char-at s (+ n 4))))) (let [n' (+ n 4)]
-                                                    [n' (char-at s n') true])
-      :default (parse-prefixed-name s n c gen))))
-
-(defn anon-blank-node
-  "Generates a new blank node with no properties. Steps to the next position.
-  s - The string to parse. Unread.
-  n - The position in the string.
-  c - The character at position n. This must be a ]
-  g - The generator.
-  return: [n c node triples more?]
-  n - The next character position after the blank node.
-  c - the character found at n
-  node - the new anonymous blank node
-  more? - If this is a subject, then will more properties appear for it. Always true."
-  [s n c g]
-  (let [n' (inc n)
-        [g node] (new-node g)]
-    [n' (char-at s n') gen node true]))
+                                                    [n' (char-at s n') true gen triples])
+      :default (parse-prefixed-name s n c gen triples))))
 
 (defn parse-triples
   "Parse a top level triples from a string.
@@ -697,24 +786,19 @@
   c - the character at offset n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  [s n c gen triples]
-  ;; TODO: This is actually a subject, then a list of predicate/objects
-  (let [
-        [n c subject triples more?] (if (= \[ c)
-                                      (let [[n c] (skip-whitespace s n c)]
-                                        (if (= \] c)
-                                          (anon-blank-node s n c gen)
-                                          (parse-blank-node-entity s n c gen triples))))])
-  (let [[n c gen subject-triples] (parse-subject s n c gen)
+  [s n c gen triples-i]
+  (let [[n c] (skip-whitespace s n c)
+        [n c subject triples enf?] (parse-subject s n c gen triples-i)
         [n c] (skip-whitespace s n c)
-        [n c gen] (parse-iri s n c gen)
-        [n c] (skip-whitespace s n c)
-        [n c gen object-triples] (parse-object s n c gen)
-        [n c] (skip-past-dot s n)]
-    [n c gen (concat subject-triples object-triples)]))
+        [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
+    (when-not (= \. c)
+      (throw-unex "Statements invalidly terminated: " s n))
+    (when (and (not enf?) (identical? triples triples-i))
+      (throw-unex "Subjects require predicates and objects: " s n))
+    [n c gen triples]))
 
 (defn parse-prefix-iri-end
-  "Parse an iri and a newline.
+  "Parse an iri and a newline for a PREFIX or BASE directive.
   NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   s - The string to parse from.
   n - The offset to start the parse from.
@@ -732,7 +816,7 @@
       (let [[n c] (skip-whitespace s nskip c)
             [n c prefix] (parse-prefix s n c)
             [n c] (skip-whitespace s n c)
-            [n c iri] (parse-iri-ref s n c gen)
+            [n c iri] (parse-iri-ref s n c gen nil)
             [n c] (skip-to s n c end-char)]
         [n c (add-prefix gen prefix iri)])
       (throw-unex "Unknown statement: " s n))))
@@ -754,7 +838,9 @@
         c (char-at s nskip)]
     (if (whitespace? c)
       (let [[n c] (skip-whitespace s nskip c)
-            [n c iri] (parse-iri-ref s n c nil)  ;; use a nil generator, since an existing base should not be used
+            ;; use a nil generator, since an existing base should not be used
+            ;; nil triples, since triples are not being generated during a directive
+            [n c iri] (parse-iri-ref s n c nil nil)
             [n c] (skip-to s n c end-char)]
         [n c (add-prefix gen :base iri)])
       (throw-unex "Unknown statement: " s n))))
@@ -765,13 +851,14 @@
   n - The position in the string to parse from.
   c - the character at position n. (Optional: can be inferred)
   gen - The current generator.
+  triples - The current triples.
   return: [n c gen triples]
   n - the new offset after parsing.
   c - the character at position n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  ([s n gen] (parse-statement s n (char-at s n) gen))
-  ([s n c gen]
+  ([s n gen triples] (parse-statement s n (char-at s n) gen triples))
+  ([s n c gen triples]
    (let [[n c] (skip-whitespace s n c)
          [n' c' gen'] (case c
                         \@ (cond
@@ -787,4 +874,4 @@
                         nil)]
      (if n'
        [n' c' gen' nil]
-       (parse-triples s n c gen)))))
+       (parse-triples s n c gen triples)))))
