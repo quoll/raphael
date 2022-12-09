@@ -439,9 +439,13 @@
                          (let [n' (inc n)]
                            (text/append! sb c)
                            (recur n' (char-at s n') (dot? c)))
-                         (throw-unex (str "Illegal character '" c "' in prefix: ") s n))))
-        [n c local] (parse-local s n)]
-    [n c (new-qname gen prefix local) gen triples]))
+                         (if (and (whitespace? c) (= "a" (str sb)))
+                           [(inc n) nil]
+                           (throw-unex (str "Illegal character '" c "' in prefix: ") s n)))))]
+    (if prefix
+      (let [[n c local] (parse-local s n)]
+        [n c (new-qname gen prefix local) gen triples])
+      [n (char-at s n) (rdf-type gen) gen triples])))
 
 (defn parse-iri
   "Parse an iri.
@@ -1004,7 +1008,7 @@
   return: {:base <optional IRI>
            :namespaces <prefixes mapped to IRIs>
            :triples <vector of 3 element vectors>}"
-  ([s] (parse-document s (new-generator)))
+  ([s] (parse s (new-generator)))
   ([s generator]
    (reset-pos!)
    (let [generator (new-generator)

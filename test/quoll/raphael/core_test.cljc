@@ -1,6 +1,6 @@
 (ns quoll.raphael.core-test
   (:require [clojure.test :refer [deftest testing is]]
-            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline?
+            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline? add-base
                                         parse-iri-ref add-prefix new-generator parse-statement
                                         parse-local parse-prefixed-name parse-number parse-string
                                         parse-long-string parse-literal
@@ -9,7 +9,7 @@
                                         ->BlankNode ->Iri new-qname
                                         RDF-NIL RDF-FIRST RDF-REST
                                         parse-predicate-object-list parse-collection
-                                        parse-document]]
+                                        parse]]
             [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
 
