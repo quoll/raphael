@@ -42,7 +42,7 @@
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
-    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))
+    (let [g (-> (new-generator) (add-base "http://test.org/"))
           i (fn [s] (new-iri g s))]
       (is (= [16 :eof (i "http://ex.com/") g nil]
              (parse-iri-ref' "<http://ex.com/>" 0 \< g)))

@@ -39,6 +39,8 @@
 (defprotocol NodeGenerator
   (new-node [generator] [generator label]
     "Generate a new node, optionally with a label indicating a reusable node. Return the next generator and node")
+  (add-base [generator iri]
+    "Adds a base iri for the document")
   (add-prefix [generator prefix iri]
     "Adds a prefix/iri pair to the namespace map")
   (iri-for [generator prefix]
@@ -125,6 +127,8 @@
              (update :counter inc)
              (update :bnode-cache assoc label node))
          node])))
+  (add-base [this iri]
+    (update this :namespaces assoc :base (as-iri-string iri this)))
   (add-prefix [this prefix iri]
     (update this :namespaces assoc prefix (as-iri-string iri this)))
   (iri-for [this prefix]
@@ -957,7 +961,7 @@
             ;; nil triples, since triples are not being generated during a directive
             [n c iri] (parse-iri-ref s n c gen nil)
             [n c] (skip-to s n c end-char)]
-        [n c (add-prefix gen :base iri)])
+        [n c (add-base gen iri)])
       (throw-unex "Unknown statement: " s n))))
 
 (defn parse-statement
@@ -992,7 +996,7 @@
        [n' c' gen' triples]
        (parse-triples s n c gen triples)))))
 
-(defn parse-document
+(defn parse
   "parse a string as a turtle document
   s - the stirng containing the document.
   g - an implementation of the Generator protocol for assigning blank nodes, IRIs and Literals,
@@ -1005,10 +1009,11 @@
    (reset-pos!)
    (let [generator (new-generator)
          triples (transient [])
-         [n gen triples] (loop [[n c gen triples] (parse-statement s 0 generator triples)]
-                           (if (= :eof c)
-                             [n gen triples]
-                             (recur (parse-statement s n c gen triples))))
+         [n gen triples] (binding [*location* (volatile! [0 0])]
+                           (loop [[n c gen triples] (parse-statement s 0 generator triples)]
+                             (if (= :eof c)
+                               [n gen triples]
+                               (recur (parse-statement s n c gen triples)))))
          result {:namespaces (get-namespaces generator)
                  :triples (persistent! triples)}
          base (get-base generator)]
