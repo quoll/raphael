@@ -15,13 +15,23 @@
         nl (str/index-of line \newline)]
     (if nl (subs line 0 nl) line)))
 
+(def ^:dynamic *location* (volatile! [0 0]))
+
+(defn reset-pos! [] (vreset! *location* [0 0]))
+
+(defn update-pos!
+  [n]
+  (vswap! *location* (fn [loc] [(inc (nth loc 0)) n])))
+
 (defmacro throw-unex
   "Convenience macro to print a message, the offset and the current line.
   msg - the message to print. The line will be appended.
   s - the string that was being parsed.
   n - the offset in the string for the data that caused the error."
   [msg s n]
-  `(throw (ex-info (str ~msg (line-at ~s ~n)) {:offset ~n})))
+  `(throw (ex-info (str ~msg (line-at ~s ~n))
+                   (let  [l# (deref *location*)]
+                     {:line (nth l# 0) :offset (- ~n (nth l# 1))}))))
 
 (defprotocol IRI
   (as-iri [iri ns-map] "Returns this object as an iri string. Note that these are typically wrapped in <>"))
@@ -192,6 +202,7 @@
       [-1 :eof]
       (if (whitespace? c)
         (let [n' (inc n)]
+          (when (= \newline c) (update-pos! n))
           (recur n' (char-at s n')))
         [n c]))))
 
@@ -210,6 +221,7 @@
       (chars c) (let [n' (inc n)]
                   [n' (char-at s n')])
       (whitespace? c) (let [n' (inc n)]
+                        (when (= \newline c) (update-pos! n))
                         (recur n' (char-at s n')))
       :default (throw-unex "Unexpected characters after end of line: " s n))))
 
@@ -488,6 +500,7 @@
                     (if (= \\ c2)
                       (recur n3 true c3)
                       (do
+                        (when (= \newline current) (update-pos! n))
                         (text/append! sb c2)
                         (recur n3 false c3))))))
               (do  ;; second character was not a second quote
@@ -495,6 +508,7 @@
                 (if (= \\ next-char)
                   (recur n2 true c2)
                   (do
+                    (when (= \newline current) (update-pos! n))
                     (text/append! sb next-char)
                     (recur n2 false c2)))))))
 
@@ -552,6 +566,7 @@
             (if (= \\ current)
               (recur n' true next-char)
               (do
+                (when (= \newline current) (update-pos! n))
                 (text/append! sb current)
                 (recur n' false next-char)))))))))
 
@@ -965,6 +980,7 @@
            :namespaces <prefixes mapped to IRIs>
            :triples <vector of 3 element vectors>}"
   [s]
+  (reset-pos!)
   (let [generator (new-generator)
         triples (transient [])
         [n gen triples] (loop [[n c gen triples] (parse-statement s 0 generator triples)]
