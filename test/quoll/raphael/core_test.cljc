@@ -5,8 +5,8 @@
                                         parse-local parse-prefixed-name parse-number parse-string
                                         parse-long-string parse-literal
                                         anon-blank-node parse-blank-node-entity parse-blank-node
-                                        new-lang-string new-literal
-                                        ->BlankNode ->QName qname
+                                        new-lang-string new-literal new-iri
+                                        ->BlankNode ->Iri new-qname
                                         RDF-NIL RDF-FIRST RDF-REST
                                         parse-predicate-object-list parse-collection
                                         parse-document]]
@@ -42,23 +42,25 @@
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
-    (is (= [16 :eof "http://ex.com/" nil nil]
-           (parse-iri-ref' "<http://ex.com/>" 0 \< nil)))
-    (is (= [46 :eof "http://example.com/path?query=x&y=2#fragment" nil nil]
-           (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 0 \< nil)))
-    (is (= [20 :eof "http://ex.com/" nil nil]
-           (parse-iri-ref' "foo <http://ex.com/>" 4 \< nil)))
-    (is (= [50 :eof "http://example.com/path?query=x&y=2#fragment" nil nil]
-           (parse-iri-ref' "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref' "<http://example.com/path query=x&y=2#fragment>" 0 \< nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 1 \h nil)))
-    (is (thrown? ExceptionInfo
-                 (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment" 0 \< nil)))
-    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))]
-      (is (= [6 :eof "path" nil nil] (parse-iri-ref' "<path>" 0 \< nil)))
-      (is (= [6 :eof "http://test.org/path" g nil] (parse-iri-ref' "<path>" 0 \< g))))))
+    (let [g (-> (new-generator) (add-prefix :base "http://test.org/"))
+          i (fn [s] (new-iri g s))]
+      (is (= [16 :eof (i "http://ex.com/") g nil]
+             (parse-iri-ref' "<http://ex.com/>" 0 \< g)))
+      (is (= [46 :eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
+             (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 0 \< g)))
+      (is (= [20 :eof (i "http://ex.com/") g nil]
+             (parse-iri-ref' "foo <http://ex.com/>" 4 \< g)))
+      (is (= [50 :eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
+             (parse-iri-ref' "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< g)))
+      (is (thrown? ExceptionInfo
+                   (parse-iri-ref' "<http://example.com/path query=x&y=2#fragment>" 0 \< g)))
+      (is (thrown? ExceptionInfo
+                   (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 1 \h g)))
+      (is (thrown? ExceptionInfo
+                   (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment" 0 \< g)))
+      (let [ge (new-generator)]
+        (is (= [6 :eof (new-iri ge "path") ge nil] (parse-iri-ref' "<path>" 0 \< ge))))
+      (is (= [6 :eof (i "http://test.org/path") g nil] (parse-iri-ref' "<path>" 0 \< g))))))
 
 (defn parse-statement' [s n gen] (parse-statement s n gen nil))
 
@@ -151,19 +153,19 @@
                 (add-prefix "a-b-c" "http://t1.org/")
                 (add-prefix "a_b" "http://t2.org/")
                 (add-prefix "a.b" "http://t3.org/"))]
-      (is (= [6 \space (->QName "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [6 \space (->Iri "ex" "cat" "http://ex.com/cat") g nil]
              (parse-prefixed-name' "ex:cat " 0 \e g)))
-      (is (= [6 \. (->QName "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [6 \. (->Iri "ex" "cat" "http://ex.com/cat") g nil]
              (parse-prefixed-name' "ex:cat. " 0 \e g)))
-      (is (= [4 \space (->QName "" "cat" "http://test.org/cat") g nil]
+      (is (= [4 \space (->Iri "" "cat" "http://test.org/cat") g nil]
              (parse-prefixed-name' ":cat " 0 \: g)))
-      (is (= [4 \. (->QName "" "cat" "http://test.org/cat") g nil]
+      (is (= [4 \. (->Iri "" "cat" "http://test.org/cat") g nil]
              (parse-prefixed-name' ":cat. " 0 \: g)))
-      (is (= [9 \space (->QName "a-b-c" "cat" "http://t1.org/cat") g nil]
+      (is (= [9 \space (->Iri "a-b-c" "cat" "http://t1.org/cat") g nil]
              (parse-prefixed-name' "a-b-c:cat " 0 \a g)))
-      (is (= [7 \space (->QName "a_b" "cat" "http://t2.org/cat") g nil]
+      (is (= [7 \space (->Iri "a_b" "cat" "http://t2.org/cat") g nil]
              (parse-prefixed-name' "a_b:cat " 0 \a g)))
-      (is (= [7 \space (->QName "a.b" "cat" "http://t3.org/cat") g nil]
+      (is (= [7 \space (->Iri "a.b" "cat" "http://t3.org/cat") g nil]
              (parse-prefixed-name' "a.b:cat " 0 \a g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' "_b:cat " 0 \_ g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' ".b:cat " 0 \. g)))
@@ -237,38 +239,34 @@
 
 
 (defn parse-literal'
-  ([s] (parse-literal s 0 (char-at s 0) nil nil))
-  ([s n] (parse-literal s n (char-at s n) nil nil)))
-
-(defn parse-literal-gen
-  [s g]
-  (parse-literal s 0 (char-at s 0) g nil))
+  ([s g] (parse-literal s 0 (char-at s 0) g nil))
+  ([s n g] (parse-literal s n (char-at s n) g nil)))
 
 (deftest string-literal-test
   (testing "Parsing string literals"
-    (is (= [2 :eof "" nil nil] (parse-literal' "\"\"")))
-    (is (= [3 :eof "" nil nil] (parse-literal' " \"\"" 1)))
-    (is (= [13 :eof "hello world" nil nil] (parse-literal' "\"hello world\"")))
-    (is (= [17 :eof "hello world" nil nil] (parse-literal' "\"\"\"hello world\"\"\"")))
-    (is (= [17 :eof "hello world" nil nil] (parse-literal' "'''hello world'''")))
-    (is (= [18 \space "hello\nworld" nil nil] (parse-literal' "\"\"\"hello\\nworld\"\"\" ")))
-    (is (= [20 \space "hello \"world\" " nil nil] (parse-literal' "\"\"\"hello \"world\" \"\"\" ")))
-    (is (= [20 \space "hello 'world' " nil nil] (parse-literal' "'''hello 'world' ''' ")))
-    (is (= [18 \' "hello 'world" nil nil] (parse-literal' "'''hello 'world'''' ")))
-    (is (= [22 :eof "hello wörld" nil nil] (parse-literal' "'''hello w\\u00f6rld'''")))
-    (is (= [26 :eof "hello w🫤rld" nil nil] (parse-literal' "'''hello w\\U0001FAE4rld'''")))
-    (is (= [25 :eof "hello '' wörld" nil nil] (parse-literal' "'''hello '' w\\u00f6rld'''")))
-    (is (= [16 :eof (new-lang-string "hello world" "en") nil nil]
-           (parse-literal' "\"hello world\"@en")))
-    (is (= [19 \space (new-lang-string "hello world" "en-uk") nil nil]
-           (parse-literal' "\"hello world\"@en-uk ")))
     (let [g (-> (new-generator) (add-prefix "xsd" "http://xsd.org/"))]
-      (is (= [38 :eof (new-literal "hello world" "http://xsd.org/string") g nil]
-             (parse-literal-gen "\"hello world\"^^<http://xsd.org/string>" g)))
-      (is (= [25 :eof (new-literal "hello world"
-                                   (->QName "xsd" "string" "http://xsd.org/string"))
+      (is (= [2 :eof "" g nil] (parse-literal' "\"\"" g)))
+      (is (= [3 :eof "" g nil] (parse-literal' " \"\"" 1 g)))
+      (is (= [13 :eof "hello world" g nil] (parse-literal' "\"hello world\"" g)))
+      (is (= [17 :eof "hello world" g nil] (parse-literal' "\"\"\"hello world\"\"\"" g)))
+      (is (= [17 :eof "hello world" g nil] (parse-literal' "'''hello world'''" g)))
+      (is (= [18 \space "hello\nworld" g nil] (parse-literal' "\"\"\"hello\\nworld\"\"\" " g)))
+      (is (= [20 \space "hello \"world\" " g nil] (parse-literal' "\"\"\"hello \"world\" \"\"\" " g)))
+      (is (= [20 \space "hello 'world' " g nil] (parse-literal' "'''hello 'world' ''' " g)))
+      (is (= [18 \' "hello 'world" g nil] (parse-literal' "'''hello 'world'''' " g)))
+      (is (= [22 :eof "hello wörld" g nil] (parse-literal' "'''hello w\\u00f6rld'''" g)))
+      (is (= [26 :eof "hello w🫤rld" g nil] (parse-literal' "'''hello w\\U0001FAE4rld'''" g)))
+      (is (= [25 :eof "hello '' wörld" g nil] (parse-literal' "'''hello '' w\\u00f6rld'''" g)))
+      (is (= [16 :eof (new-lang-string g "hello world" "en") g nil]
+             (parse-literal' "\"hello world\"@en" g)))
+      (is (= [19 \space (new-lang-string g "hello world" "en-uk") g nil]
+             (parse-literal' "\"hello world\"@en-uk " g)))
+      (is (= [38 :eof (new-literal g "hello world" (new-iri g "http://xsd.org/string")) g nil]
+             (parse-literal' "\"hello world\"^^<http://xsd.org/string>" g)))
+      (is (= [25 :eof (new-literal g "hello world"
+                                   (->Iri "xsd" "string" "http://xsd.org/string"))
               g nil]
-             (parse-literal-gen "\"hello world\"^^xsd:string" g))))))
+             (parse-literal' "\"hello world\"^^xsd:string" g))))))
 
 (defn parse-anon
   [s g]
@@ -296,8 +294,8 @@
 (deftest parse-blank-entity-test
   (testing "Parsing blank node entity"
     (let [g (-> (new-generator) (add-prefix "" "http://a.org/"))
-          a (qname "" "a" g)
-          b (qname "" "b" g)
+          a (new-qname g "" "a")
+          b (new-qname g "" "b")
           [n1 c1 b1 g1 t1] (parse-entity "[:a 1; :b 2]" g)
           [n2 c2 b2 g2 t2] (parse-entity "[:a 1, \"one\"; :b 2]." g1)
           ]
@@ -347,8 +345,8 @@
 (deftest collection-test
   (testing "Parsing of basic collections"
     (let [g (-> (new-generator))
-          a (qname "" "a" g)
-          b (qname "" "b" g)
+          a (new-qname g "" "a")
+          b (new-qname g "" "b")
           [n0 c0 b0 g0 t0] (parse-collection' "()" g)
           [n1 c1 b1 g1 t1] (parse-collection' "( 1 2)" g0)
           b12 (->BlankNode 1)
@@ -403,8 +401,8 @@
 (deftest predicate-object-list-test
   (testing "Parsing of predicate/object pairs"
     (let [g (-> (new-generator) (add-prefix "" "http://a.org/"))
-          a (qname "" "a" g)
-          b (qname "" "b" g)]
+          a (new-qname g "" "a")
+          b (new-qname g "" "b")]
       (is (= [0 \. g []] (parse-pred-obj-list "." 0 g)))
       (is (= [6 \. g [[:s a b]]] (parse-pred-obj-list ":a :b ." 0 g)))
       (is (= [6 \] g [[:s a b]]] (parse-pred-obj-list ":a :b ]" 0 g)))

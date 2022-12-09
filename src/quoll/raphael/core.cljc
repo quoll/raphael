@@ -34,7 +34,7 @@
                      {:line (nth l# 0) :offset (- ~n (nth l# 1))}))))
 
 (defprotocol IRI
-  (as-iri [iri ns-map] "Returns this object as an iri string. Note that these are typically wrapped in <>"))
+  (as-iri-string [iri generator] "Returns this object as an iri string."))
 
 (defprotocol NodeGenerator
   (new-node [generator] [generator label]
@@ -46,26 +46,40 @@
   (get-namespaces [generator]
     "Returns a map of all the namespaces recorded by this generator")
   (get-base [generator]
-    "Returns the base of this generator, if one has been set"))
+    "Returns the base of this generator, if one has been set")
+  (new-qname [generator prefix local]
+    "Returns a Qualified Name object.")
+  (new-iri [generator iri]
+    "Returns an IRI object.")
+  (new-literal [generator s] [generator s t]
+    "Returns a literal. Either simple, or with a type")
+  (new-lang-string [generator s l]
+    "Returns a string literal, with a language tag")
+  (rdf-type [generator] "Returns the rdf:type qname")
+  (rdf-first [generator] "Returns the rdf:first qname")
+  (rdf-rest [generator] "Returns the rdf:rest qname")
+  (rdf-nil [generator] "Returns the rdf:nil qname"))
 
 (defrecord BlankNode [n]
   Object
   (toString [this] (str "_:b" n)))
 
-(defrecord QName [prefix local iri]
+(defrecord Iri [prefix local iri]
   IRI
-  (as-iri [this generator] (str (iri-for generator prefix) local))
+  (as-iri-string [this generator] (or iri (str (iri-for generator prefix) local)))
   Object
-  (toString [this] (str prefix ":" local)))
+  (toString [this] (if prefix
+                     (str prefix ":" local)
+                     (str "<" iri ">"))))
 
-(defn qname
-  "Creates a qname"
-  ([prefix local] (->QName prefix local nil))
-  ([prefix local gen] (->QName prefix local (str (iri-for gen prefix) local))))
+(extend-protocol IRI
+  String
+  (as-iri-string [this generator] this))
 
-(def RDF-FIRST (->QName "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
-(def RDF-REST (->QName "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
-(def RDF-NIL (->QName "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
+(def RDF-TYPE (->Iri "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+(def RDF-FIRST (->Iri "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
+(def RDF-REST (->Iri "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
+(def RDF-NIL (->Iri "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
 
 (defn iri-string
   "Converts an IRI to a string form for printing"
@@ -99,37 +113,40 @@
       type (str (print-escape value) "^^" (iri-string type))
       :default (print-escape value))))
 
-(defn new-literal
-  "Creates a new literal object"
-  ([value] (->Literal value nil nil))
-  ([value type]
-   (->Literal value nil type)))
-
-(defn new-lang-string
-  "Creates a language-tagged literal"
-  [value lang]
-  (->Literal value lang nil))
-
 (defrecord Generator [counter bnode-cache namespaces]
-    NodeGenerator
-    (new-node [this]
-      [(update this :counter inc) (->BlankNode counter)])
-    (new-node [this label]
-      (if-let [node (get bnode-cache label)]
-        [this node]
-        (let [node (->BlankNode counter)]
-          [(-> this
-               (update :counter inc)
-               (update :bnode-cache assoc label node))
-           node])))
-    (add-prefix [this prefix iri]
-      (update this :namespaces assoc prefix iri))
-    (iri-for [this prefix]
-      (get namespaces prefix))
-    (get-namespaces [this]
-      (dissoc namespaces :base))
-    (get-base [this]
-      (:base namespaces)))
+  NodeGenerator
+  (new-node [this]
+    [(update this :counter inc) (->BlankNode counter)])
+  (new-node [this label]
+    (if-let [node (get bnode-cache label)]
+      [this node]
+      (let [node (->BlankNode counter)]
+        [(-> this
+             (update :counter inc)
+             (update :bnode-cache assoc label node))
+         node])))
+  (add-prefix [this prefix iri]
+    (update this :namespaces assoc prefix (as-iri-string iri this)))
+  (iri-for [this prefix]
+    (get namespaces prefix))
+  (get-namespaces [this]
+    (dissoc namespaces :base))
+  (get-base [this]
+    (:base namespaces))
+  (new-qname [this prefix local]
+    (->Iri prefix local (str (get namespaces prefix) local)))
+  (new-iri [this iri]
+    (->Iri nil nil iri))
+  (new-literal [this s]
+    (->Literal s nil nil))
+  (new-literal [this s t]
+    (->Literal s nil t))
+  (new-lang-string [this s lang]
+    (->Literal s lang nil))
+  (rdf-type [this] RDF-TYPE)
+  (rdf-first [this] RDF-FIRST)
+  (rdf-rest [this] RDF-REST)
+  (rdf-nil [this] RDF-NIL))
 
 (defn new-generator [] (->Generator 0 {} {}))
 
@@ -324,9 +341,9 @@
     (loop [n (inc n) c (char-at s n)]
       (if (= c \>)
         (let [i (str sb)
-              iri (if (and gen (relative-iri? i))
-                    (if-let [base (get-base gen)] (str base i) i)
-                    i)
+              iri (new-iri gen (if (relative-iri? i)
+                                 (if-let [base (get-base gen)] (str base i) i)
+                                 i))
               n' (inc n)]
           [n' (char-at s n') iri gen triples])
         (if (non-iri-char? c)
@@ -402,7 +419,7 @@
   return: [n c prefix]
   n - The offset immediately after the prefixed name.
   c - The character immediately after the prefixed name.
-  qname - The prefixed name as a QName.
+  qname - The prefixed name as a Iri.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   [s n c gen triples]
@@ -420,7 +437,7 @@
                            (recur n' (char-at s n') (dot? c)))
                          (throw-unex (str "Illegal character '" c "' in prefix: ") s n))))
         [n c local] (parse-local s n)]
-    [n c (qname prefix local gen) gen triples]))
+    [n c (new-qname gen prefix local) gen triples]))
 
 (defn parse-iri
   "Parse an iri.
@@ -432,7 +449,7 @@
   return: [n c iri]
   n - the offset immediately after the iri.
   c - the character at offset n.
-  iri - the node for the parsed iri. Either an IRI string or a QName.
+  iri - the node for the parsed iri. Either an IRI string or an Iri.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   [s n c gen triples]
@@ -600,12 +617,12 @@
       \^ (if (= \^ (char-at s (inc n)))
            (let [n2 (+ n 2)
                  [n' c' iri gen triples] (parse-iri s n2 (char-at s n2) gen triples)]
-             [n' c' (new-literal lit-str iri) gen triples])
+             [n' c' (new-literal gen lit-str iri) gen triples])
            (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]
            (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
              (let [end (+ n' (count lang))]
-               [end (char-at s end) (new-lang-string lit-str lang) gen triples])
+               [end (char-at s end) (new-lang-string gen lit-str lang) gen triples])
              (throw-unex "Bad language tag on literal: " s n')))
       [n c lit-str gen triples])))
 
@@ -663,20 +680,23 @@
   triples - the current triples."
   [s n c gen triples]
   (let [n' (inc n)
-        [n c] (skip-whitespace s (inc n) (char-at s n'))]
+        [n c] (skip-whitespace s (inc n) (char-at s n'))
+        rfirst (rdf-first gen)
+        rrest (rdf-rest gen)
+        rnil (rdf-nil gen)]
     (if (= \) c)
       (let [n' (inc n)]
-        [n' (char-at s n') RDF-NIL gen triples])
+        [n' (char-at s n') rnil gen triples])
       (let [[gen head] (new-node gen)]
         (loop [last-node head [n c node gen triples] (parse-object s n c gen triples)]
-          (let [triples (conj! triples [last-node RDF-FIRST node])
+          (let [triples (conj! triples [last-node rfirst node])
                 [n c] (skip-whitespace s n c)]
             (if (= \) c)
               (let [n' (inc n)
-                    triples (conj! triples [last-node RDF-REST RDF-NIL])]
+                    triples (conj! triples [last-node rrest rnil])]
                 [n' (char-at s n') head gen triples])
               (let [[gen node] (new-node gen)
-                    triples (conj! triples [last-node RDF-REST node])]
+                    triples (conj! triples [last-node rrest node])]
                 (recur node (parse-object s n c gen triples))))))))))
 
 (defn parse-blank-node
@@ -934,9 +954,8 @@
         c (char-at s nskip)]
     (if (whitespace? c)
       (let [[n c] (skip-whitespace s nskip c)
-            ;; use a nil generator, since an existing base should not be used
             ;; nil triples, since triples are not being generated during a directive
-            [n c iri] (parse-iri-ref s n c nil nil)
+            [n c iri] (parse-iri-ref s n c gen nil)
             [n c] (skip-to s n c end-char)]
         [n c (add-prefix gen :base iri)])
       (throw-unex "Unknown statement: " s n))))
@@ -976,20 +995,23 @@
 (defn parse-document
   "parse a string as a turtle document
   s - the stirng containing the document.
+  g - an implementation of the Generator protocol for assigning blank nodes, IRIs and Literals,
+      and managing namespaces. Optional.
   return: {:base <optional IRI>
            :namespaces <prefixes mapped to IRIs>
            :triples <vector of 3 element vectors>}"
-  [s]
-  (reset-pos!)
-  (let [generator (new-generator)
-        triples (transient [])
-        [n gen triples] (loop [[n c gen triples] (parse-statement s 0 generator triples)]
-                          (if (= :eof c)
-                            [n gen triples]
-                            (recur (parse-statement s n c gen triples))))
-        result {:namespaces (get-namespaces generator)
-                :triples (persistent! triples)}
-        base (get-base generator)]
-    (if base
-      (assoc result :base base)
-      result)))
+  ([s] (parse-document s (new-generator)))
+  ([s generator]
+   (reset-pos!)
+   (let [generator (new-generator)
+         triples (transient [])
+         [n gen triples] (loop [[n c gen triples] (parse-statement s 0 generator triples)]
+                           (if (= :eof c)
+                             [n gen triples]
+                             (recur (parse-statement s n c gen triples))))
+         result {:namespaces (get-namespaces generator)
+                 :triples (persistent! triples)}
+         base (get-base generator)]
+     (if base
+       (assoc result :base base)
+       result))))
