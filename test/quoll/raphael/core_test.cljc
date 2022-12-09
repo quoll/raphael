@@ -4,9 +4,16 @@
                                         parse-iri-ref add-prefix new-generator parse-statement
                                         parse-local parse-prefixed-name parse-number parse-string
                                         parse-long-string parse-literal
-                                        new-lang-string new-literal ->QName]]
+                                        anon-blank-node parse-blank-node-entity parse-blank-node
+                                        new-lang-string new-literal
+                                        ->BlankNode ->QName qname
+                                        RDF-NIL RDF-FIRST RDF-REST
+                                        parse-predicate-object-list parse-collection
+                                        parse-document]]
             [quoll.raphael.text :refer [char-at]])
   (:import [clojure.lang ExceptionInfo]))
+
+(set! *warn-on-reflection* true)
 
 (defn skip-whitespace' [s n] (skip-whitespace s n (char-at s n)))
 
@@ -262,3 +269,154 @@
                                    (->QName "xsd" "string" "http://xsd.org/string"))
               g nil]
              (parse-literal-gen "\"hello world\"^^xsd:string" g))))))
+
+(defn parse-anon
+  [s g]
+  (let [[n c node g _ _] (anon-blank-node s 1 (char-at s 1) g nil)]
+    [n c node g]))
+
+(deftest parse-anon-test
+  (testing "Parsing anonymous blank nodes"
+    (let [g (-> (new-generator))
+          [n1 c1 b1 g1] (parse-anon "[]" g)
+          [n2 c2 b2 g2] (parse-anon " ] ." g1)
+          ]
+      (is (= 2 n1))
+      (is (= :eof c1))
+      (is (= (->BlankNode 0) b1))
+      (is (= 2 n2))
+      (is (= \space c2))
+      (is (= (->BlankNode 1) b2)))))
+
+(defn parse-entity
+  [s g]
+  (let [[n c node g triples] (parse-blank-node-entity s 1 (char-at s 1) g (transient []))]
+    [n c node g (persistent! triples)]))
+
+(deftest parse-blank-entity-test
+  (testing "Parsing blank node entity"
+    (let [g (-> (new-generator) (add-prefix "" "http://a.org/"))
+          a (qname "" "a" g)
+          b (qname "" "b" g)
+          [n1 c1 b1 g1 t1] (parse-entity "[:a 1; :b 2]" g)
+          [n2 c2 b2 g2 t2] (parse-entity "[:a 1, \"one\"; :b 2]." g1)
+          ]
+      (is (= n1 12))
+      (is (= c1 :eof))
+      (is (= b1 (->BlankNode 0)))
+      (is (= t1 [[b1 a 1] [b1 b 2]]))
+      (is (= n2 19))
+      (is (= c2 \.))
+      (is (= b2 (->BlankNode 1)))
+      (is (= t2 [[b2 a 1] [b2 a "one"] [b2 b 2]])))))
+
+(defn parse-blank
+  [s g]
+  (let [[n c node g _] (parse-blank-node s 0 (char-at s 0) g nil)]
+    [n c node g]))
+
+(deftest parse-blank-test
+  (testing "Parsing labelled blank node"
+    (let [g (new-generator)
+          [n1 c1 b1 g1] (parse-blank "_:b1" g)
+          [n2 c2 b2 g2] (parse-blank "_:b111d," g1)
+          [n3 c3 b3 g3] (parse-blank "_:x1 " g2)
+          [n4 c4 b4 g4] (parse-blank "_:b1 " g3)
+          [n5 c5 b5 g5] (parse-blank "_:b1.1d]" g4)]
+      (is (= n1 4))
+      (is (= c1 :eof))
+      (is (= b1 (->BlankNode 0)))
+      (is (= n2 7))
+      (is (= c2 \,))
+      (is (= b2 (->BlankNode 1)))
+      (is (= n3 4))
+      (is (= c3 \space))
+      (is (= b3 (->BlankNode 2)))
+      (is (= n4 4))
+      (is (= c4 \space))
+      (is (= b4 (->BlankNode 0)))
+      (is (= n5 7))
+      (is (= c5 \]))
+      (is (= b5 (->BlankNode 3))))))
+
+(defn parse-collection'
+  [s g]
+  (let [[n c node g triples] (parse-collection s 0 (char-at s 0) g (transient []))]
+    [n c node g (persistent! triples)]))
+
+(deftest collection-test
+  (testing "Parsing of basic collections"
+    (let [g (-> (new-generator))
+          a (qname "" "a" g)
+          b (qname "" "b" g)
+          [n0 c0 b0 g0 t0] (parse-collection' "()" g)
+          [n1 c1 b1 g1 t1] (parse-collection' "( 1 2)" g0)
+          b12 (->BlankNode 1)
+          [n2 c2 b2 g2 t2] (parse-collection' "(:a 1 :b 2 )" g1)
+                                        ;b2 (->BlankNode 2)
+          b22 (->BlankNode 3)
+          b23 (->BlankNode 4)
+          b24 (->BlankNode 5)
+          [n3 c3 b3 g3 t3] (parse-collection' "(:a 1 \"one\" [] :b 2)." g2)
+                                        ;b3 (->BlankNode 6)
+          b32 (->BlankNode 7)
+          b33 (->BlankNode 8)
+          b34 (->BlankNode 9)
+          b34a (->BlankNode 10)
+          b35 (->BlankNode 11)
+          b36 (->BlankNode 12)
+          [n4 c4 b4 g4 t4] (parse-collection' "([:a 1; :b 2] [:a 2])." g3)
+                                        ;b4 (->BlankNode 13)
+          b41a (->BlankNode 14)
+          b42 (->BlankNode 15)
+          b42a (->BlankNode 16)]
+      (is (= n0 2))
+      (is (= c0 :eof))
+      (is (= b0 RDF-NIL))
+      (is (= t0 []))
+      (is (= n1 6))
+      (is (= c1 :eof))
+      (is (= b1 (->BlankNode 0)))
+      (is (= t1 [[b1 RDF-FIRST 1] [b1 RDF-REST b12] [b12 RDF-FIRST 2] [b12 RDF-REST RDF-NIL]]))
+      (is (= n2 12))
+      (is (= c2 :eof))
+      (is (= b2 (->BlankNode 2)))
+      (is (= t2 [[b2 RDF-FIRST a] [b2 RDF-REST b22] [b22 RDF-FIRST 1] [b22 RDF-REST b23]
+                 [b23 RDF-FIRST b] [b23 RDF-REST b24] [b24 RDF-FIRST 2] [b24 RDF-REST RDF-NIL]]))
+      (is (= n3 20))
+      (is (= c3 \.))
+      (is (= b3 (->BlankNode 6)))
+      (is (= t3 [[b3 RDF-FIRST a] [b3 RDF-REST b32] [b32 RDF-FIRST 1] [b32 RDF-REST b33]
+                 [b33 RDF-FIRST "one"] [b33 RDF-REST b34] [b34 RDF-FIRST b34a] [b34 RDF-REST b35]
+                 [b35 RDF-FIRST b] [b35 RDF-REST b36] [b36 RDF-FIRST 2] [b36 RDF-REST RDF-NIL]]))
+      (is (= n4 21))
+      (is (= c4 \.))
+      (is (= b4 (->BlankNode 13)))
+      (is (= t4 [[b41a a 1] [b41a b 2] [b4 RDF-FIRST b41a] [b4 RDF-REST b42] [b42a a 2]
+                 [b42 RDF-FIRST b42a] [b42 RDF-REST RDF-NIL]])))))
+
+(defn parse-pred-obj-list
+  [s n g]
+  (let [[n c gen triples] (parse-predicate-object-list s n (char-at s n) :s g (transient []))]
+    [n c gen (persistent! triples)]))
+
+(deftest predicate-object-list-test
+  (testing "Parsing of predicate/object pairs"
+    (let [g (-> (new-generator) (add-prefix "" "http://a.org/"))
+          a (qname "" "a" g)
+          b (qname "" "b" g)]
+      (is (= [0 \. g []] (parse-pred-obj-list "." 0 g)))
+      (is (= [6 \. g [[:s a b]]] (parse-pred-obj-list ":a :b ." 0 g)))
+      (is (= [6 \] g [[:s a b]]] (parse-pred-obj-list ":a :b ]" 0 g)))
+      (is (= [5 \. g [[:s a b]]] (parse-pred-obj-list ":a :b." 0 g)))
+      (is (= [5 \] g [[:s a b]]] (parse-pred-obj-list ":a :b]" 0 g)))
+      (is (= [13 \. g [[:s a b] [:s b 2.0]]] (parse-pred-obj-list ":a :b ;\n:b 2.." 0 g)))
+      (is (= [13 \] g [[:s a b] [:s b 3]]] (parse-pred-obj-list ":a :b ;\n :b 3]" 0 g)))
+      (is (= [19 \. g [[:s a b] [:s b 2] [:s a "x"]]]
+             (parse-pred-obj-list ":a :b ;\n:b 2;:a \"x\"." 0 g)))
+      (is (= [11 \. g [[:s a b] [:s a 2]]] (parse-pred-obj-list ":a :b ,\n 2 ." 0 g)))
+      (is (= [15 \] g [[:s a 1] [:s a 2] [:s a 3] [:s b 4] [:s b 5]]]
+             (parse-pred-obj-list ":a 1,2,3;:b 4,5]" 0 g))))))
+
+(deftest document-test
+  (testing "Parsing of entire documents"))

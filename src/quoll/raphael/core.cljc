@@ -6,10 +6,12 @@
 
 (def ^:const WIDTH 80)
 
+(def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+
 (defn line-at
   "Returns a line of text that is no more that WIDTH characters. Used for user output."
   [s n]
-  (let [line (subs s n (min (+ n WIDTH) (count s)))
+  (let [line (subs s (max n 0) (min (+ n WIDTH) (count s)))
         nl (str/index-of line \newline)]
     (if nl (subs line 0 nl) line)))
 
@@ -30,7 +32,11 @@
   (add-prefix [generator prefix iri]
     "Adds a prefix/iri pair to the namespace map")
   (iri-for [generator prefix]
-    "Gets the stored iri for a given prefix"))
+    "Gets the stored iri for a given prefix")
+  (get-namespaces [generator]
+    "Returns a map of all the namespaces recorded by this generator")
+  (get-base [generator]
+    "Returns the base of this generator, if one has been set"))
 
 (defrecord BlankNode [n]
   Object
@@ -46,6 +52,10 @@
   "Creates a qname"
   ([prefix local] (->QName prefix local nil))
   ([prefix local gen] (->QName prefix local (str (iri-for gen prefix) local))))
+
+(def RDF-FIRST (->QName "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
+(def RDF-REST (->QName "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
+(def RDF-NIL (->QName "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
 
 (defn iri-string
   "Converts an IRI to a string form for printing"
@@ -105,7 +115,11 @@
     (add-prefix [this prefix iri]
       (update this :namespaces assoc prefix iri))
     (iri-for [this prefix]
-      (get namespaces prefix)))
+      (get namespaces prefix))
+    (get-namespaces [this]
+      (dissoc namespaces :base))
+    (get-base [this]
+      (:base namespaces)))
 
 (defn new-generator [] (->Generator 0 {} {}))
 
@@ -299,7 +313,7 @@
       (if (= c \>)
         (let [i (str sb)
               iri (if (and gen (relative-iri? i))
-                    (if-let [base (iri-for gen :base)] (str base i) i)
+                    (if-let [base (get-base gen)] (str base i) i)
                     i)
               n' (inc n)]
           [n' (char-at s n') iri gen triples])
@@ -617,9 +631,38 @@
              (parse-long full-nr))]
     [n' nextc nr gen triples]))
 
+(declare parse-predicate parse-object)
+
 (defn parse-collection
+  "Parses a collection. This creates a linked list in the triples.
+  s - The string to parse.
+  n - The offset to parse from.
+  c - the first character of the collection
+  gen - the current generator
+  triples - the current triples
+  return: [n c node gen triples]
+  n - The offset immediately after the prefix.
+  c - the character at offset n.
+  node - The node representing the collection.
+  gen - the generator.
+  triples - the current triples."
   [s n c gen triples]
-  )
+  (let [n' (inc n)
+        [n c] (skip-whitespace s (inc n) (char-at s n'))]
+    (if (= \) c)
+      (let [n' (inc n)]
+        [n' (char-at s n') RDF-NIL gen triples])
+      (let [[gen head] (new-node gen)]
+        (loop [last-node head [n c node gen triples] (parse-object s n c gen triples)]
+          (let [triples (conj! triples [last-node RDF-FIRST node])
+                [n c] (skip-whitespace s n c)]
+            (if (= \) c)
+              (let [n' (inc n)
+                    triples (conj! triples [last-node RDF-REST RDF-NIL])]
+                [n' (char-at s n') head gen triples])
+              (let [[gen node] (new-node gen)
+                    triples (conj! triples [last-node RDF-REST node])]
+                (recur node (parse-object s n c gen triples))))))))))
 
 (defn parse-blank-node
   "Parses a blank node label.
@@ -631,16 +674,17 @@
   return: [n c node gen triples]
   n - The offset immediately after the prefix.
   c - the character at offset n.
-  iri - The iri string.
+  node - The blank node.
   gen - the generator.
   triples - the current triples."
   [s n c gen triples]
   (when-not (= \: (char-at s (inc n)))
     (throw-unex "Illegal underscore (_) at start of symbol: " s n))
-  (let [sb (string-builder)
-        c (char-at s (+ n 2))
+  (let [c (char-at s (+ n 2))
         _ (when-not (pn-chars-ud? c)
             (throw-unex "Illegal character at start of blank node label: " s n))
+        sb (text/string-builder)
+        _ (text/append! sb c)
         [n c label] (loop [n (+ 3 n) c (char-at s n) dot false]
                       (if (pn-chars-dot? c)
                         (let [n' (inc n)]
@@ -672,8 +716,6 @@
     [n c nil gen triples]
     (parse-iri s n c gen triples)))
 
-(declare parse-predicate parse-object)
-
 (defn parse-predicate-object-list
   "Parse a predicate-object list
   s - The string to parse from
@@ -689,22 +731,27 @@
   [s n c subject gen triples]
   (loop [[n c pred gen triples] (maybe-parse-predicate s n c gen triples)]
     (if-not pred
-      [n c subject gen triples]
+      [n c gen triples]
       (let [[n c] (skip-whitespace s n c)
             [n c gen triples] (loop [[n c obj gen triples] (parse-object s n c gen triples)]
                                 (let [[n c] (skip-whitespace s n c)
                                       triples (conj! triples [subject pred obj])]
                                   (case c
                                     (\] \. \;) [n c gen triples]
-                                    \, (recur (parse-object s n c gen triples))
+                                    \, (let [n' (inc n)
+                                             [n c] (skip-whitespace s n' (char-at s n'))]
+                                         (recur (parse-object s n c gen triples)))
                                     (throw-unex "Unexpected separator in predicate-object list: " s n))))]
         (if (= c \;)
-          (recur (parse-predicate s n c gen triples))
+          (let [n' (inc n)
+                [n c] (skip-whitespace s n' (char-at s n'))]
+            (recur (parse-iri s n c gen triples)))
           [n c gen triples])))))
 
 (defn anon-blank-node
-  "Generates a new blank node with no properties. Steps to the next position.
-  s - The string to parse. Unread.
+  "Generates a new blank node with no properties. Already passed the opening [ character, and whitespace.
+  This function just steps to the next position.
+  s - The string to parse. Not read by this function.
   n - The position in the string.
   c - The character at position n. This must be a ]
   g - The generator.
@@ -722,7 +769,7 @@
     [n' (char-at s n') node g triples false]))
 
 (defn parse-blank-node-entity
-  "Parse a blank node property/value list.
+  "Parse a blank node property/value list. Already past the opening [ character and whitespace.
   s - The string to parse from
   n - The offset in the string to start at.
   c - The character at position n
@@ -735,7 +782,7 @@
   gen - the updated generator
   triples - the updated triples sequence
   enf? - is this enough if this is a subject? A predicateObject sequence is not needed. true."
-  [s n c gen triples more?]
+  [s n c gen triples]
   (let [[gen node] (new-node gen)
         [n c gen triples] (parse-predicate-object-list s n c node gen triples)
         [n c] (skip-whitespace s n c)]
@@ -764,7 +811,8 @@
     \< (parse-iri-ref s n c gen triples)
     \( (parse-collection s n c gen triples)
     \_ (parse-blank-node s n c gen triples)
-    \[ (let [[n c] (skip-whitespace s n c)]
+    \[ (let [n' (inc n)
+             [n c] (skip-whitespace s n' (char-at s n'))]
          (if (= \] c)
            (anon-blank-node s n c gen triples)
            (parse-blank-node-entity s n c gen triples)))
@@ -789,7 +837,11 @@
     \< (parse-iri-ref s n c gen triples)
     \( (parse-collection s n c gen triples)
     \_ (parse-blank-node s n c gen triples)
-    \[ (parse-blank-node-entity s n c gen triples)
+    \[ (let [n' (inc n)
+             [n c] (skip-whitespace s n' (char-at s n'))]
+         (if (= \] c)
+           (anon-blank-node s n c gen triples)
+           (parse-blank-node-entity s n c gen triples)))
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c gen triples)
     (\' \") (parse-literal s n c gen triples)
     (cond
@@ -900,7 +952,28 @@
                         (\P \p) (when (and (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
                                            (whitespace? (char-at s (+ n 6))))
                                   (parse-prefix-iri-end s n gen newline? 6))
+                        :eof [n c gen triples]
                         nil)]
      (if n'
-       [n' c' gen' nil]
+       [n' c' gen' triples]
        (parse-triples s n c gen triples)))))
+
+(defn parse-document
+  "parse a string as a turtle document
+  s - the stirng containing the document.
+  return: {:base <optional IRI>
+           :namespaces <prefixes mapped to IRIs>
+           :triples <vector of 3 element vectors>}"
+  [s]
+  (let [generator (new-generator)
+        triples (transient [])
+        [n gen triples] (loop [[n c gen triples] (parse-statement s 0 generator triples)]
+                          (if (= :eof c)
+                            [n gen triples]
+                            (recur (parse-statement s n c gen triples))))
+        result {:namespaces (get-namespaces generator)
+                :triples (persistent! triples)}
+        base (get-base generator)]
+    (if base
+      (assoc result :base base)
+      result)))

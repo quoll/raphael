@@ -7,7 +7,7 @@
   init - optional initial string.
   return: an object that can be appended to."
   ([] (StringBuilder.))
-  ([init] (StringBuilder. init)))
+  ([^String init] (StringBuilder. init)))
 
 (defn append!
   "Appends data to a string builders.
