@@ -63,6 +63,9 @@
       (is (= [6 :eof (i "http://test.org/path") g nil] (parse-iri-ref' "<path>" 0 \< g))))))
 
 (defn parse-statement' [s n gen] (parse-statement s n gen nil))
+(defn parse-statement-t [s gen]
+  (let [[n c g t] (parse-statement s 0 (char-at s 0) gen (transient []))]
+    [n c g (persistent! t)]))
 
 (deftest non-triple-statement-test
   (testing "parsing statements that are not triples"
@@ -128,6 +131,31 @@
                    (parse-statement' "@prefix \udd00\udd49x: <http://atticten.com/pre>. \n" 0 g5)))
       (is (thrown? ExceptionInfo
                    (parse-statement' "@prefix \udb80\udc00x: <http://atticten.com/pre>. \n" 0 g5))))))
+
+(deftest triple-statement-test
+  (testing "parsing statements that are not triples"
+    (let [g (new-generator)
+          [n1 c1 g1 t1] (parse-statement-t "BASE <http://test.org/>\n" g)
+          [n2 c2 g2 t2] (parse-statement-t "PREFIX a: <http://a.org/>\n" g1)
+          [n3 c3 g3 t3] (parse-statement-t "a:a a:b 'test' ." g2)
+          [n4 c4 g4 t4] (parse-statement-t "a:a <b> (1 2) . " g3)
+          ]
+      (is (= n3 16))
+      (is (= c3 :eof))
+      (is (= (:namespaces g3) {:base "http://test.org/" "a" "http://a.org/"}))
+      (is (= t3 [[(qname "a" "a" g3) (qname "a" "b" g3) "test"]]))
+      (is (= n4 15))
+      (is (= c4 \space))
+      (is (= t4 [
+                 [(->BlankNode 0) RDF-FIRST 1]
+                 [(->BlankNode 0) RDF-REST (->BlankNode 1)]
+                 [(->BlankNode 1) RDF-FIRST 2]
+                 [(->BlankNode 1) RDF-REST RDF-NIL]
+                 [(qname "a" "a" g3) (->QName nil nil "http://test.org/b") (->BlankNode 0)]
+                 ]))
+      )))
+
+
 
 (deftest local-name-test
   (testing "Parsing the local portion of a prefixed name"

@@ -772,7 +772,7 @@
   gen - the updated generator
   triples - the updated triples sequence."
   [s n c subject gen triples]
-  (loop [[n c pred gen triples] (maybe-parse-predicate s n c gen triples)]
+  (loop [[n c pred gen triples :as all] (maybe-parse-predicate s n c gen triples)]
     (if-not pred
       [n c gen triples]
       (let [[n c] (skip-whitespace s n c)
@@ -841,7 +841,7 @@
   c - the char found at position n.
   gen - the node generator.
   triples - the current triples.
-  return: [n c subject triples]
+  return: [n c subject gen triples]
   n - the offset immediately after the subject.
   c - the character at offset n.
   subject - the node for the parsed subject.
@@ -910,16 +910,18 @@
   c - the character at offset n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  [s n c gen triples-i]
-  (let [[n c] (skip-whitespace s n c)
-        [n c subject triples enf?] (parse-subject s n c gen triples-i)
+  [s n c gen triples]
+  (let [initial-count (count triples)
+        [n c] (skip-whitespace s n c)
+        [n c subject gen triples enf?] (parse-subject s n c gen triples)
         [n c] (skip-whitespace s n c)
         [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
     (when-not (= \. c)
       (throw-unex "Statements invalidly terminated: " s n))
-    (when (and (not enf?) (identical? triples triples-i))
+    (when (and (not enf?) (= initial-count (count triples)))
       (throw-unex "Subjects require predicates and objects: " s n))
-    [n c gen triples]))
+    (let [n' (inc n)]
+      [n' (char-at s n') gen triples])))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline for a PREFIX or BASE directive.
