@@ -143,16 +143,14 @@
       (is (= n3 16))
       (is (= c3 :eof))
       (is (= (:namespaces g3) {:base "http://test.org/" "a" "http://a.org/"}))
-      (is (= t3 [[(qname "a" "a" g3) (qname "a" "b" g3) "test"]]))
+      (is (= t3 [[(new-qname g3 "a" "a") (new-qname g3 "a" "b") "test"]]))
       (is (= n4 15))
       (is (= c4 \space))
-      (is (= t4 [
-                 [(->BlankNode 0) RDF-FIRST 1]
+      (is (= t4 [[(->BlankNode 0) RDF-FIRST 1]
                  [(->BlankNode 0) RDF-REST (->BlankNode 1)]
                  [(->BlankNode 1) RDF-FIRST 2]
                  [(->BlankNode 1) RDF-REST RDF-NIL]
-                 [(qname "a" "a" g3) (->QName nil nil "http://test.org/b") (->BlankNode 0)]
-                 ]))
+                 [(new-qname g3 "a" "a") (new-iri g3 "http://test.org/b") (->BlankNode 0)]]))
       )))
 
 
