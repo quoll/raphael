@@ -7,11 +7,11 @@
                                         anon-blank-node parse-blank-node-entity parse-blank-node
                                         new-lang-string new-literal new-iri
                                         ->BlankNode ->Iri new-qname
-                                        RDF-NIL RDF-FIRST RDF-REST
+                                        RDF-NIL RDF-FIRST RDF-REST RDF-TYPE
                                         parse-predicate-object-list parse-collection
                                         parse]]
             [quoll.raphael.text :refer [char-at]])
-  (:import [clojure.lang ExceptionInfo]))
+  #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (set! *warn-on-reflection* true)
 
@@ -23,7 +23,7 @@
     (is (= [3 \a] (skip-whitespace' "   a b" 2)))
     (is (= [3 \a] (skip-whitespace' "   a b" 3)))
     (is (= [5 \b] (skip-whitespace' "   a b" 4)))
-    (is (= [-1 :eof] (skip-whitespace' "   a b" 6)))))
+    (is (= [6 :eof] (skip-whitespace' "   a b" 6)))))
 
 (defn skip-to' [s n chars] (skip-to s n (char-at s n) chars))
 
@@ -139,7 +139,8 @@
           [n2 c2 g2 t2] (parse-statement-t "PREFIX a: <http://a.org/>\n" g1)
           [n3 c3 g3 t3] (parse-statement-t "a:a a:b 'test' ." g2)
           [n4 c4 g4 t4] (parse-statement-t "a:a <b> (1 2) . " g3)
-          ]
+          [n5 c5 g5 t5] (parse-statement-t "[a:a 1; a:b 2] a a:X . " g3)
+          [n6 c6 g6 t6] (parse-statement-t "[a:a 1;a:b 2;a a:X].[" g3)]
       (is (= n3 16))
       (is (= c3 :eof))
       (is (= (:namespaces g3) {:base "http://test.org/" "a" "http://a.org/"}))
@@ -151,8 +152,36 @@
                  [(->BlankNode 1) RDF-FIRST 2]
                  [(->BlankNode 1) RDF-REST RDF-NIL]
                  [(new-qname g3 "a" "a") (new-iri g3 "http://test.org/b") (->BlankNode 0)]]))
-      )))
+      (is (= n5 22))
+      (is (= c5 \space))
+      (is (= t5 [[(->BlankNode 0) (new-qname g3 "a" "a") 1]
+                 [(->BlankNode 0) (new-qname g3 "a" "b") 2]
+                 [(->BlankNode 0) RDF-TYPE (new-qname g3 "a" "X")]]))
+      (is (= n6 20))
+      (is (= c6 \[))
+      (is (= t6 [[(->BlankNode 0) (new-qname g3 "a" "a") 1]
+                 [(->BlankNode 0) (new-qname g3 "a" "b") 2]
+                 [(->BlankNode 0) RDF-TYPE (new-qname g3 "a" "X")]])))))
 
+(deftest parse-comment-test
+  (testing "parsing statements that have comments"
+    (let [g (new-generator)
+          [n1 c1 g1 t1] (parse-statement' "@base <http://test.org/> # comment\n. \n" 0 g)
+          [n2 c2 g2 t2] (parse-statement' "@prefix a: #comment\n  <http://test.com/>. \n" 0 g1)
+          [n3 c3 g3 t3] (parse-statement' "#comment\n" 0 g2)
+          [n4 c4 g4 t4] (parse-statement-t "a:a #comment\na:b            #comment\n 'test'#comment\n." g2)]
+      (is (= n1 36))
+      (is (= c1 \space))
+      (is (= (:namespaces g1) {:base "http://test.org/"}))
+      (is (= n2 41))
+      (is (= c2 \space))
+      (is (= (:namespaces g2) {:base "http://test.org/" "a" "http://test.com/"}))
+      (is (= n3 9))
+      (is (= c3 :eof))
+      (is (nil? t3))
+      (is (= n4 54))
+      (is (= c4 :eof))
+      (is (= t4 [[(new-qname g2 "a" "a") (new-qname g2 "a" "b") "test"]])))))
 
 
 (deftest local-name-test
@@ -441,6 +470,3 @@
       (is (= [11 \. g [[:s a b] [:s a 2]]] (parse-pred-obj-list ":a :b ,\n 2 ." 0 g)))
       (is (= [15 \] g [[:s a 1] [:s a 2] [:s a 3] [:s b 4] [:s b 5]]]
              (parse-pred-obj-list ":a 1,2,3;:b 4,5]" 0 g))))))
-
-(deftest document-test
-  (testing "Parsing of entire documents"))

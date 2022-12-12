@@ -15,7 +15,7 @@
         nl (str/index-of line \newline)]
     (if nl (subs line 0 nl) line)))
 
-(def ^:dynamic *location* (volatile! [0 0]))
+(def ^:dynamic *location* (volatile! [1 0]))
 
 (defn reset-pos! [] (vreset! *location* [0 0]))
 
@@ -78,7 +78,7 @@
   String
   (as-iri-string [this generator] this))
 
-(def RDF-TYPE (->Iri "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+(def RDF-TYPE (->Iri "rdf" "type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
 (def RDF-FIRST (->Iri "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
 (def RDF-REST (->Iri "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
 (def RDF-NIL (->Iri "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
@@ -111,7 +111,7 @@
   Object
   (toString [this]
     (cond
-      lang (str (print-escape value) \@ lang)
+      lang (str (print-escape value) "@" lang)
       type (str (print-escape value) "^^" (iri-string type))
       :default (print-escape value))))
 
@@ -208,6 +208,7 @@
 
 (defn dot? [c] (= \. c))
 (defn newline? [c] (= \newline c))
+(def end-comment? #{\newline :eof})
 
 (defn skip-whitespace
   "Skip over the whitespace starting from a position in a string.
@@ -220,12 +221,22 @@
   [s n c]
   (loop [n n c c]
     (if (= :eof c)
-      [-1 :eof]
+      [n :eof]
       (if (whitespace? c)
         (let [n' (inc n)]
           (when (= \newline c) (update-pos! n))
           (recur n' (char-at s n')))
-        [n c]))))
+        (if (= \# c)
+          (let [n' (loop [nn (inc n)]
+                     (let [cc (char-at s nn)
+                           nn' (inc nn)]
+                       (if (end-comment? cc)
+                         (do
+                           (when (= \newline cc) (update-pos! nn))
+                           nn')
+                         (recur nn'))))]
+            (recur n' (char-at s n')))
+          [n c])))))
 
 (defn skip-to
   "Skip over the whitespace to the required character. If there are nonwhitespace characters, this is an error.
@@ -244,6 +255,15 @@
       (whitespace? c) (let [n' (inc n)]
                         (when (= \newline c) (update-pos! n))
                         (recur n' (char-at s n')))
+      (= \# c) (let [n' (loop [nn (inc n)]
+                          (let [cc (char-at s nn)
+                                nn' (inc nn)]
+                            (if (end-comment? cc)
+                              (do
+                                (when (= \newline cc) (update-pos! nn))
+                                nn')
+                              (recur nn'))))]
+                 (recur n' (char-at s n')))
       :default (throw-unex "Unexpected characters after end of line: " s n))))
 
 (defn skip-past-dot
@@ -889,11 +909,11 @@
     (\' \") (parse-literal s n c gen triples)
     (cond
       (and (= c \f)
-           (= "alse" (text/ssubs s n (+ n 5)))
+           (= "alse" (text/ssubs s (inc n) (+ n 5)))
            (not (pn-chars? (char-at s (+ n 5))))) (let [n' (+ n 5)]
                                                     [n' (char-at s n') false gen triples])
       (and (= c \t)
-           (= "rue" (text/ssubs s n (+ n 4)))
+           (= "rue" (text/ssubs s (inc n) (+ n 4)))
            (not (pn-chars? (char-at s (+ n 4))))) (let [n' (+ n 4)]
                                                     [n' (char-at s n') true gen triples])
       :default (parse-prefixed-name s n c gen triples))))
@@ -912,16 +932,18 @@
   triples - the triples generated from parsing this line."
   [s n c gen triples]
   (let [initial-count (count triples)
-        [n c] (skip-whitespace s n c)
-        [n c subject gen triples enf?] (parse-subject s n c gen triples)
-        [n c] (skip-whitespace s n c)
-        [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
-    (when-not (= \. c)
-      (throw-unex "Statements invalidly terminated: " s n))
-    (when (and (not enf?) (= initial-count (count triples)))
-      (throw-unex "Subjects require predicates and objects: " s n))
-    (let [n' (inc n)]
-      [n' (char-at s n') gen triples])))
+        [n c] (skip-whitespace s n c)]
+    (if (= :eof c)
+      [n :eof gen triples]
+      (let [[n c subject gen triples enf?] (parse-subject s n c gen triples)
+            [n c] (skip-whitespace s n c)
+            [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
+        (when-not (= \. c)
+          (throw-unex "Statements invalidly terminated: " s n))
+        (when (and (not enf?) (= initial-count (count triples)))
+          (throw-unex "Subjects require predicates and objects: " s n))
+        (let [n' (inc n)]
+          [n' (char-at s n') gen triples])))))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline for a PREFIX or BASE directive.
@@ -1013,16 +1035,15 @@
   ([s] (parse s (new-generator)))
   ([s generator]
    (reset-pos!)
-   (let [generator (new-generator)
-         triples (transient [])
-         [n gen triples] (binding [*location* (volatile! [0 0])]
+   (let [triples (transient [])
+         [n gen triples] (binding [*location* (volatile! [1 0])]
                            (loop [[n c gen triples] (parse-statement s 0 generator triples)]
                              (if (= :eof c)
                                [n gen triples]
                                (recur (parse-statement s n c gen triples)))))
-         result {:namespaces (get-namespaces generator)
+         result {:namespaces (get-namespaces gen)
                  :triples (persistent! triples)}
-         base (get-base generator)]
+         base (get-base gen)]
      (if base
        (assoc result :base base)
        result))))
