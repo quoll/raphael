@@ -13,7 +13,7 @@
             [quoll.raphael.text :refer [char-at]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
-(set! *warn-on-reflection* true)
+#?(:clj (set! *warn-on-reflection* true))
 
 (defn skip-whitespace' [s n] (skip-whitespace s n (char-at s n)))
 
@@ -470,3 +470,5 @@
       (is (= [11 \. g [[:s a b] [:s a 2]]] (parse-pred-obj-list ":a :b ,\n 2 ." 0 g)))
       (is (= [15 \] g [[:s a 1] [:s a 2] [:s a 3] [:s b 4] [:s b 5]]]
              (parse-pred-obj-list ":a 1,2,3;:b 4,5]" 0 g))))))
+
+#?(:cljs (cljs.test/run-tests))

@@ -75,7 +75,7 @@
                      (str "<" iri ">"))))
 
 (extend-protocol IRI
-  String
+  #?(:clj String :cljs string)
   (as-iri-string [this generator] this))
 
 (def RDF-TYPE (->Iri "rdf" "type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))

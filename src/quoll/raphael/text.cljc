@@ -1,13 +1,14 @@
 (ns ^{:doc "Text functions, for building and parsing strings"
       :author "Paula Gearon"}
-    quoll.raphael.text)
+    quoll.raphael.text
+  #?(:cljs (:import [goog.string StringBuffer])))
 
 (defn string-builder
   "Creates a mutable string builder.
   init - optional initial string.
   return: an object that can be appended to."
-  ([] (StringBuilder.))
-  ([^String init] (StringBuilder. init)))
+  ([] #?(:clj (StringBuilder.) :cljs (StringBuffer.)))
+  ([^String init] #?(:clj (StringBuilder. init) :cljs (StringBuffer.))))
 
 (defn append!
   "Appends data to a string builders.
