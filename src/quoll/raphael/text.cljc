@@ -3,50 +3,86 @@
     quoll.raphael.text
   #?(:cljs (:import [goog.string StringBuffer])))
 
-(defn string-builder
-  "Creates a mutable string builder.
-  init - optional initial string.
-  return: an object that can be appended to."
-  ([] #?(:clj (StringBuilder.) :cljs (StringBuffer.)))
-  ([^String init] #?(:clj (StringBuilder. init) :cljs (StringBuffer.))))
+#?(:clj
+   (defn string-builder
+     "Creates a mutable string builder.
+     init - optional initial string.
+     return: an object that can be appended to."
+     ([] (StringBuilder.))
+     ([^String init]
+      (StringBuilder. init)))
+
+   :cljs
+   (defn string-builder
+     "Creates a mutable string builder.
+     init - optional initial string.
+     return: an object that can be appended to."
+     ([] (StringBuffer.))
+     ([init]
+      (StringBuffer. init))))
 
 (defn append!
   "Appends data to a string builders.
   sb - the string builder.
   data - the data to append in string form.
   return: the string builder (may be ignored since it mutates)"
-  [^StringBuilder sb data]
+  #?(:clj [^StringBuilder sb data] :cljs [sb data])
   (.append sb data))
 
-(defn last-char
-  "Returns the last char appended to a string builder.
-  Equivalent to `(last (str sb))` but uses direct calls.
-  sb - the mutable string builder.
-  return: the final char."
-  [^StringBuilder sb]
-  #?(:clj (let [len (.length sb)] (when (> len 0) (.charAt sb (dec len))))
-     :cljs (let [s (str sb)
-                 len (.-length sb)]
-             (when (> len 0)
-               (.charAt s (dec len))))))
+#?(:clj
+   (defn last-char
+     "Returns the last char appended to a string builder.
+     Equivalent to `(last (str sb))` but uses direct calls.
+     sb - the mutable string builder.
+     return: the final char."
+     [^StringBuilder sb]
+     (let [len (.length sb)] (when (> len 0) (.charAt sb (dec len)))))
 
-(defn last-char-str
-  "Returns the last char of a str.
-  Equivalent to `(last s)` but in constant time.
-  s - The string.
-  return: the final char."
-  [^String s]
-  #?(:clj (let [len (.length s)] (when (> len 0) (.charAt s (dec len))))
-     :cljs (let [len (.-length s)]
-             (when (> len 0)
-               (.charAt s (dec len))))))
+   :cljs
+   (defn last-char
+     "Returns the last char appended to a string builder.
+     Equivalent to `(last (str sb))` but uses direct calls.
+     sb - the mutable string builder.
+     return: the final char."
+     [sb]
+     (let [s (str sb)
+           len (.-length sb)]
+       (when (> len 0)
+         (.charAt s (dec len))))))
 
-(defn char-at
-  "Returns the character at a given position in the string,
-  or :eof at the end of the string."
-  [^String s ^long n]
-  #?(:clj (if (< n (.length s)) (.charAt s n) :eof)
-     :cljs (if (< n (.-length s)) (.charAt s n) :eof)))
+#?(:clj
+   (defn last-char-str
+     "Returns the last char of a str.
+     Equivalent to `(last s)` but in constant time.
+     s - The string.
+     return: the final char."
+     [^String s]
+     (let [len (.length s)] (when (> len 0) (.charAt s (dec len)))))
+
+   :cljs
+   (defn last-char-str
+     "Returns the last char of a str.
+     Equivalent to `(last s)` but in constant time.
+     s - The string.
+     return: the final char."
+     [s]
+     (let [len (.-length s)]
+       (when (> len 0)
+         (.charAt s (dec len))))))
+
+#?(:clj
+   (defn char-at
+     "Returns the character at a given position in the string,
+     or :eof at the end of the string."
+     [^String s ^long n]
+     (if (< n (.length s)) (.charAt s n) :eof))
+   
+   :cljs
+   (defn char-at
+     "Returns the character at a given position in the string,
+     or :eof at the end of the string."
+     [s n]
+     (if (< n (.-length s)) (.charAt s n) :eof)))
 
 (defn parse-hex
   "Parses a hexadecimal string into a long"
