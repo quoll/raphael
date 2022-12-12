@@ -32,3 +32,19 @@ variables (requires the `ci` task be run first):
     $ clojure -T:build deploy
 
 The library will be deployed to net.clojars.quoll/raphael on clojars.org by default.
+
+### Tests
+#### Clojure
+Run Clojure tests with:
+
+```
+    $ clj -X:test
+```
+
+#### ClojureScript
+Run ClojureScript tests with:
+
+```
+    $ clj -M:test-cljs
+```
+

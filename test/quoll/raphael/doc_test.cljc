@@ -429,3 +429,5 @@ and up to two sequential apostrophes ('')."]])))))
               ["_:b4" :rdf/first 2]
               ["_:b4" :rdf/rest :rdf/nil]
               ["_:b3" :rdf/rest :rdf/nil]])))))
+
+#?(:cljs (cljs.test/run-tests))

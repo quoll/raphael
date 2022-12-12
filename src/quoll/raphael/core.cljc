@@ -2,36 +2,18 @@
       :author "Paula Gearon"}
     quoll.raphael.core
   (:require [clojure.string :as str]
+            [quoll.raphael.m :refer [throw-unex] :include-macros true]
             [quoll.raphael.text :as text :refer [char-at]]))
-
-(def ^:const WIDTH 80)
 
 (def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 
-(defn line-at
-  "Returns a line of text that is no more that WIDTH characters. Used for user output."
-  [s n]
-  (let [line (subs s (max n 0) (min (+ n WIDTH) (count s)))
-        nl (str/index-of line \newline)]
-    (if nl (subs line 0 nl) line)))
+(def ^:dynamic *loc* (volatile! [1 0]))
 
-(def ^:dynamic *location* (volatile! [1 0]))
-
-(defn reset-pos! [] (vreset! *location* [0 0]))
+(defn reset-pos! [] (vreset! *loc* [0 0]))
 
 (defn update-pos!
   [n]
-  (vswap! *location* (fn [loc] [(inc (nth loc 0)) n])))
-
-(defmacro throw-unex
-  "Convenience macro to print a message, the offset and the current line.
-  msg - the message to print. The line will be appended.
-  s - the string that was being parsed.
-  n - the offset in the string for the data that caused the error."
-  [msg s n]
-  `(throw (ex-info (str ~msg (line-at ~s ~n))
-                   (let  [l# (deref *location*)]
-                     {:line (nth l# 0) :offset (- ~n (nth l# 1))}))))
+  (vswap! *loc* (fn [loc] [(inc (nth loc 0)) n])))
 
 (defprotocol IRI
   (as-iri-string [iri generator] "Returns this object as an iri string."))
@@ -161,7 +143,7 @@
   high - the high end of the character range to add, inclusive.
   return - the set with the new range of characters added."
   [chars low high]
-  (into chars (map char) (range (long low) (inc (long high)))))
+  (into chars (map char) (range (text/char-code low) (inc (text/char-code high)))))
 
 (def whitespace? #{\space \tab \return \newline})
 
@@ -264,7 +246,7 @@
                                 nn')
                               (recur nn'))))]
                  (recur n' (char-at s n')))
-      :default (throw-unex "Unexpected characters after end of line: " s n))))
+      :default (throw-unex *loc* "Unexpected characters after end of line: " s n))))
 
 (defn skip-past-dot
   "Skip to the terminating dot. If non-whitespace is found, then report an error.
@@ -292,7 +274,7 @@
     (loop [n' n c (char-at s n)]
       (cond
         (= \: c) (if (= \. (text/last-char sb))
-                   (throw-unex "Unexpected '.' at end of prefix: " s n)
+                   (throw-unex *loc* "Unexpected '.' at end of prefix: " s n)
                    (let [nn' (inc n')]
                      [nn' (char-at s nn') (str sb)]))
         (= n n') (cond
@@ -302,22 +284,22 @@
                    (text/high-surrogate? c) (let [nn (+ n' 2)
                                                   c2 (char-at s (inc n'))]
                                               (when-not (text/low-surrogate? c2)
-                                                (throw-unex "Bad Unicode characters at start of prefix: " s n))
+                                                (throw-unex *loc* "Bad Unicode characters at start of prefix: " s n))
                                               (text/append! sb c)
                                               (text/append! sb c2)
                                               (recur nn (char-at s nn)))
-                   :default (throw-unex "Unexpected character at start of prefix: " s n))
+                   :default (throw-unex *loc* "Unexpected character at start of prefix: " s n))
         (pn-chars? c) (let [n' (inc n')]
                         (text/append! sb c)
                         (recur n' (char-at s n')))
         (text/high-surrogate? c) (let [nn (+ n' 2)
                                        c2 (char-at s (inc n'))]
                                    (when-not (text/low-surrogate? c2)
-                                     (throw-unex "Bad Unicode characters in prefix: " s n))
+                                     (throw-unex *loc* "Bad Unicode characters in prefix: " s n))
                                    (text/append! sb c)
                                    (text/append! sb c2)
                                    (recur nn (char-at s nn)))
-        :default (throw-unex (str "Unexpected character '" c "' in prefix: ") s n)))))
+        :default (throw-unex *loc* (str "Unexpected character '" c "' (" (text/char-code c) ") in prefix: ") s n)))))
 
 (defn parse-u-char
   "Parse a an unescapped code of uxxxx or Uxxxxxxxx. A preceding \\ character was just parsed.
@@ -335,7 +317,7 @@
              unicode (text/parse-hex (subs s (inc n) end))
              [high low] (text/surrogates unicode)]
          [end (char-at s end) (str (char high) (char low))])
-    (throw-unex "Unexpected non-U character when processing unicode escape" s n)))
+    (throw-unex *loc* "Unexpected non-U character when processing unicode escape" s n)))
 
 ;; A regex to find the scheme at the start of an IRI
 (def scheme-re #"^[A-Za-z][A-Za-z0-9.+-]*:")
@@ -360,7 +342,7 @@
   triples - the current triples."
   [s n c gen triples]
   (when-not (= c \<)
-    (throw-unex "Unexpected character commencing an IRI Reference: " s n))
+    (throw-unex *loc* "Unexpected character commencing an IRI Reference: " s n))
   (let [sb (text/string-builder)]
     (loop [n (inc n) c (char-at s n)]
       (if (= c \>)
@@ -371,13 +353,13 @@
               n' (inc n)]
           [n' (char-at s n') iri gen triples])
         (if (non-iri-char? c)
-          (throw-unex "Unexpected character in IRI: " s n)
+          (throw-unex *loc* "Unexpected character in IRI: " s n)
           (if (= c \\)
             (if-let [[n' c' ch] (let [nn (inc n)] (parse-u-char s nn (char-at s nn)))]
               (do
                 (text/append! sb ch)
                 (recur n' c'))
-              (throw-unex "Unexpected \\ character in IRI: " s n))
+              (throw-unex *loc* "Unexpected \\ character in IRI: " s n))
             (let [n' (inc n)]
               (text/append! sb c)
               (recur n' (char-at s n')))))))))
@@ -402,18 +384,18 @@
                               (text/append! sb a)
                               (text/append! sb b)
                               (+ n 3))
-                            (throw-unex "Bad escape code in localname: " s n)))
+                            (throw-unex *loc* "Bad escape code in localname: " s n)))
                      \\ (let [a (char-at s (inc n))]
                           (if (local-esc? a)
                             (do
                               (text/append! sb a)
                               (+ n 2))
-                            (throw-unex "Bad escape code in localname: " s n)))
+                            (throw-unex *loc* "Bad escape code in localname: " s n)))
                      (do
                        (text/append! sb c)
                        (inc n))))
         f (char-at s n)
-        _ (when-not (local-chars? f) (throw-unex (str "Unexpected character '" f "' in local name: ") s n))
+        _ (when-not (local-chars? f) (throw-unex *loc* (str "Unexpected character '" f "' in local name: ") s n))
         n (add-char f n)]
     (loop [n n c (char-at s n)]
       (if (= \. c) ;; at a dot. Check if this is inside a local name or terminating it
@@ -448,12 +430,12 @@
   triples - the triples generated in parsing the node."
   [s n c gen triples]
   (when-not (or (pn-chars-base? c) (= \: c))
-    (throw-unex "Prefix char starts with illegal character" s n))
+    (throw-unex *loc* "Prefix char starts with illegal character" s n))
   (let [sb (text/string-builder)
         [n prefix] (loop [n n c c dot false]
                      (if (= \: c)
                        (if dot
-                         (throw-unex "Prefix illegally ends with a '.': " s n)
+                         (throw-unex *loc* "Prefix illegally ends with a '.': " s n)
                          [(inc n) (str sb)])
                        (if (pn-chars-dot? c)
                          (let [n' (inc n)]
@@ -461,7 +443,7 @@
                            (recur n' (char-at s n') (dot? c)))
                          (if (and (whitespace? c) (= "a" (str sb)))
                            [(inc n) nil]
-                           (throw-unex (str "Illegal character '" c "' in prefix: ") s n)))))]
+                           (throw-unex *loc* (str "Illegal character '" c "' in prefix: ") s n)))))]
     (if prefix
       (let [[n c local] (parse-local s n)]
         [n c (new-qname gen prefix local) gen triples])
@@ -508,7 +490,7 @@
       [n' (char-at s n') e])
     (if (#{\u \U} c)
       (parse-u-char s n c)
-      (throw-unex (str "Unexpected escape character <" c "> found in literal: ") s n))))
+      (throw-unex *loc* (str "Unexpected escape character <" c "> found in literal: ") s n))))
 
 (defn parse-long-string
   "Parse a triple-quoted string form. Because this is already identified as a triple quote
@@ -529,7 +511,7 @@
       (cond
         (= end-q current)
         (if esc
-          (throw-unex "Unexpected escape sequence in long-form string: " s (dec n))
+          (throw-unex *loc* "Unexpected escape sequence in long-form string: " s (dec n))
           (let [n' (inc n)
                 next-char (char-at s n')
                 n2 (inc n')
@@ -558,7 +540,7 @@
                     (recur n2 false c2)))))))
 
         (= :eof current)
-        (throw-unex "Improperly terminated long literal: " s n)
+        (throw-unex *loc* "Improperly terminated long literal: " s n)
 
         :default
         (if esc
@@ -599,7 +581,7 @@
             [n' next-char (str sb)]))
 
         (= :eof current)
-        (throw-unex "Improperly terminated literal: " s n)
+        (throw-unex *loc* "Improperly terminated literal: " s n)
 
         :default
         (if esc
@@ -646,12 +628,12 @@
            (let [n2 (+ n 2)
                  [n' c' iri gen triples] (parse-iri s n2 (char-at s n2) gen triples)]
              [n' c' (new-literal gen lit-str iri) gen triples])
-           (throw-unex "Badly formed type expression on literal. Expected ^^: " s n))
+           (throw-unex *loc* "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]
            (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
              (let [end (+ n' (count lang))]
                [end (char-at s end) (new-lang-string gen lit-str lang) gen triples])
-             (throw-unex "Bad language tag on literal: " s n')))
+             (throw-unex *loc* "Bad language tag on literal: " s n')))
       [n c lit-str gen triples])))
 
 (def end-mantissa? #{\e \E :eof})
@@ -685,7 +667,7 @@
                                  (and (= \. sec) (end-mantissa? (char-at full-nr 2))))))
                       (and (= \. frst) (end-mantissa? (char-at full-nr 1)))
                       (and (nil? exp) (#{\e \E} nextc))))
-            (throw-unex (str "Invalid number: '" full-nr "' in:") s n))
+            (throw-unex *loc* (str "Invalid number: '" full-nr "' in:") s n))
         nr (if (or (= \. (text/last-char-str up-to-dot)) (re-find #"[eE]" after-dot))
              (parse-double full-nr)
              (parse-long full-nr))]
@@ -742,10 +724,10 @@
   triples - the current triples."
   [s n c gen triples]
   (when-not (= \: (char-at s (inc n)))
-    (throw-unex "Illegal underscore (_) at start of symbol: " s n))
+    (throw-unex *loc* "Illegal underscore (_) at start of symbol: " s n))
   (let [c (char-at s (+ n 2))
         _ (when-not (pn-chars-ud? c)
-            (throw-unex "Illegal character at start of blank node label: " s n))
+            (throw-unex *loc* "Illegal character at start of blank node label: " s n))
         sb (text/string-builder)
         _ (text/append! sb c)
         [n c label] (loop [n (+ 3 n) c (char-at s n) dot false]
@@ -754,7 +736,7 @@
                           (text/append! sb c)
                           (recur n' (char-at s n') (dot? c)))
                         (if dot
-                          (throw-unex "blank node illegally ends with a '.': " s n)
+                          (throw-unex *loc* "blank node illegally ends with a '.': " s n)
                           [n c (str sb)])))
         [gen node] (new-node gen label)]
     [n c node gen triples]))
@@ -804,7 +786,7 @@
                                     \, (let [n' (inc n)
                                              [n c] (skip-whitespace s n' (char-at s n'))]
                                          (recur (parse-object s n c gen triples)))
-                                    (throw-unex "Unexpected separator in predicate-object list: " s n))))]
+                                    (throw-unex *loc* "Unexpected separator in predicate-object list: " s n))))]
         (if (= c \;)
           (let [n' (inc n)
                 [n c] (skip-whitespace s n' (char-at s n'))]
@@ -852,7 +834,7 @@
     (if (= c \])
       (let [n' (inc n)]
         [n' (char-at s n') node gen triples true])
-      (throw-unex "Structured blank node entity improperly terminated: " s n))))
+      (throw-unex *loc* "Structured blank node entity improperly terminated: " s n))))
 
 (defn parse-subject
   "Parse a subject entity, including any triples.
@@ -939,9 +921,9 @@
             [n c] (skip-whitespace s n c)
             [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
         (when-not (= \. c)
-          (throw-unex "Statements invalidly terminated: " s n))
+          (throw-unex *loc* "Statements invalidly terminated: " s n))
         (when (and (not enf?) (= initial-count (count triples)))
-          (throw-unex "Subjects require predicates and objects: " s n))
+          (throw-unex *loc* "Subjects require predicates and objects: " s n))
         (let [n' (inc n)]
           [n' (char-at s n') gen triples])))))
 
@@ -967,7 +949,7 @@
             [n c iri] (parse-iri-ref s n c gen nil)
             [n c] (skip-to s n c end-char)]
         [n c (add-prefix gen prefix iri)])
-      (throw-unex "Unknown statement: " s n))))
+      (throw-unex *loc* "Unknown statement: " s n))))
 
 (defn parse-base-end
   "Parse an iri and a dot.
@@ -990,7 +972,7 @@
             [n c iri] (parse-iri-ref s n c gen nil)
             [n c] (skip-to s n c end-char)]
         [n c (add-base gen iri)])
-      (throw-unex "Unknown statement: " s n))))
+      (throw-unex *loc* "Unknown statement: " s n))))
 
 (defn parse-statement
   "Parse a directive or triples.
@@ -1011,7 +993,7 @@
                         \@ (cond
                              (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
                              (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
-                             :default (throw-unex "Unknown statement: " s n))
+                             :default (throw-unex *loc* "Unknown statement: " s n))
                         (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
                                            (whitespace? (char-at s (+ n 4))))
                                   (parse-base-end s n gen newline? 4))
@@ -1036,7 +1018,7 @@
   ([s generator]
    (reset-pos!)
    (let [triples (transient [])
-         [n gen triples] (binding [*location* (volatile! [1 0])]
+         [n gen triples] (binding [*loc* (volatile! [1 0])]
                            (loop [[n c gen triples] (parse-statement s 0 generator triples)]
                              (if (= :eof c)
                                [n gen triples]
