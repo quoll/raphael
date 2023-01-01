@@ -3,7 +3,8 @@
     quoll.raphael.core
   (:require [clojure.string :as str]
             [quoll.raphael.m :refer [throw-unex] :include-macros true]
-            [quoll.raphael.text :as text :refer [char-at]]))
+            [quoll.raphael.text :as text :refer [char-at]]
+            [quoll.raphael.triples :as triples]))
 
 (def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 
@@ -699,14 +700,14 @@
         [n' (char-at s n') rnil gen triples])
       (let [[gen head] (new-node gen)]
         (loop [last-node head [n c node gen triples] (parse-object s n c gen triples)]
-          (let [triples (conj! triples [last-node rfirst node])
+          (let [triples (triples/append! triples last-node rfirst node)
                 [n c] (skip-whitespace s n c)]
             (if (= \) c)
               (let [n' (inc n)
-                    triples (conj! triples [last-node rrest rnil])]
+                    triples (triples/append! triples last-node rrest rnil)]
                 [n' (char-at s n') head gen triples])
               (let [[gen node] (new-node gen)
-                    triples (conj! triples [last-node rrest node])]
+                    triples (triples/append! triples last-node rrest node)]
                 (recur node (parse-object s n c gen triples))))))))))
 
 (defn parse-blank-node
@@ -780,7 +781,7 @@
       (let [[n c] (skip-whitespace s n c)
             [n c gen triples] (loop [[n c obj gen triples] (parse-object s n c gen triples)]
                                 (let [[n c] (skip-whitespace s n c)
-                                      triples (conj! triples [subject pred obj])]
+                                      triples (triples/append! triples subject pred obj)]
                                   (case c
                                     (\] \. \;) [n c gen triples]
                                     \, (let [n' (inc n)
@@ -1017,14 +1018,14 @@
   ([s] (parse s (new-generator)))
   ([s generator]
    (reset-pos!)
-   (let [triples (transient [])
+   (let [triples (triples/triple-accumulator)
          [n gen triples] (binding [*loc* (volatile! [1 0])]
                            (loop [[n c gen triples] (parse-statement s 0 generator triples)]
                              (if (= :eof c)
                                [n gen triples]
                                (recur (parse-statement s n c gen triples)))))
          result {:namespaces (get-namespaces gen)
-                 :triples (persistent! triples)}
+                 :triples (seq triples)}
          base (get-base gen)]
      (if base
        (assoc result :base base)

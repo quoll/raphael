@@ -10,7 +10,8 @@
                                         RDF-NIL RDF-FIRST RDF-REST RDF-TYPE
                                         parse-predicate-object-list parse-collection
                                         parse]]
-            [quoll.raphael.text :refer [char-at]])
+            [quoll.raphael.text :refer [char-at]]
+            [quoll.raphael.triples :refer [triple-accumulator]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 #?(:clj (set! *warn-on-reflection* true))
@@ -64,8 +65,8 @@
 
 (defn parse-statement' [s n gen] (parse-statement s n gen nil))
 (defn parse-statement-t [s gen]
-  (let [[n c g t] (parse-statement s 0 (char-at s 0) gen (transient []))]
-    [n c g (persistent! t)]))
+  (let [[n c g t] (parse-statement s 0 (char-at s 0) gen (triple-accumulator))]
+    [n c g (seq t)]))
 
 (deftest non-triple-statement-test
   (testing "parsing statements that are not triples"
@@ -343,8 +344,8 @@
 
 (defn parse-entity
   [s g]
-  (let [[n c node g triples] (parse-blank-node-entity s 1 (char-at s 1) g (transient []))]
-    [n c node g (persistent! triples)]))
+  (let [[n c node g triples] (parse-blank-node-entity s 1 (char-at s 1) g (triple-accumulator))]
+    [n c node g (seq triples)]))
 
 (deftest parse-blank-entity-test
   (testing "Parsing blank node entity"
@@ -394,8 +395,8 @@
 
 (defn parse-collection'
   [s g]
-  (let [[n c node g triples] (parse-collection s 0 (char-at s 0) g (transient []))]
-    [n c node g (persistent! triples)]))
+  (let [[n c node g triples] (parse-collection s 0 (char-at s 0) g (triple-accumulator))]
+    [n c node g (seq triples)]))
 
 (deftest collection-test
   (testing "Parsing of basic collections"
@@ -426,7 +427,7 @@
       (is (= n0 2))
       (is (= c0 :eof))
       (is (= b0 RDF-NIL))
-      (is (= t0 []))
+      (is (empty? t0))
       (is (= n1 6))
       (is (= c1 :eof))
       (is (= b1 (->BlankNode 0)))
@@ -450,15 +451,15 @@
 
 (defn parse-pred-obj-list
   [s n g]
-  (let [[n c gen triples] (parse-predicate-object-list s n (char-at s n) :s g (transient []))]
-    [n c gen (persistent! triples)]))
+  (let [[n c gen triples] (parse-predicate-object-list s n (char-at s n) :s g (triple-accumulator))]
+    [n c gen (seq triples)]))
 
 (deftest predicate-object-list-test
   (testing "Parsing of predicate/object pairs"
     (let [g (-> (new-generator) (add-prefix "" "http://a.org/"))
           a (new-qname g "" "a")
           b (new-qname g "" "b")]
-      (is (= [0 \. g []] (parse-pred-obj-list "." 0 g)))
+      (is (= [0 \. g nil] (parse-pred-obj-list "." 0 g)))
       (is (= [6 \. g [[:s a b]]] (parse-pred-obj-list ":a :b ." 0 g)))
       (is (= [6 \] g [[:s a b]]] (parse-pred-obj-list ":a :b ]" 0 g)))
       (is (= [5 \. g [[:s a b]]] (parse-pred-obj-list ":a :b." 0 g)))
