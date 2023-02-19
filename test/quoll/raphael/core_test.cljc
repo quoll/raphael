@@ -467,6 +467,7 @@
       (is (= [13 \. g [[:s a b] [:s b 2.0]]] (parse-pred-obj-list ":a :b ;\n:b 2.." 0 g)))
       (is (= [13 \] g [[:s a b] [:s b 3]]] (parse-pred-obj-list ":a :b ;\n :b 3]" 0 g)))
       (is (= [15 \] g [[:s a b] [:s b 3]]] (parse-pred-obj-list ":a :b ;\n :b 3 ;]" 0 g)))
+      (is (= [17 \] g [[:s a b] [:s b 3] [:s b 2]]] (parse-pred-obj-list ":a :b ;\n :b 3, 2,]" 0 g)))
       (is (= [19 \. g [[:s a b] [:s b 2] [:s a "x"]]]
              (parse-pred-obj-list ":a :b ;\n:b 2;:a \"x\"." 0 g)))
       (is (= [11 \. g [[:s a b] [:s a 2]]] (parse-pred-obj-list ":a :b ,\n 2 ." 0 g)))

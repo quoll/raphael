@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [quoll.raphael.m :refer [throw-unex] :include-macros true]
             [quoll.raphael.text :as text :refer [char-at]]
-            [quoll.raphael.triples :as triples]))
+            [quoll.raphael.triples :as triples])
+  #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 
@@ -786,7 +787,11 @@
                                     (\] \. \;) [n c gen triples]
                                     \, (let [n' (inc n)
                                              [n c] (skip-whitespace s n' (char-at s n'))]
-                                         (recur (parse-object s n c gen triples)))
+                                         (if-let [parse-result (try
+                                                                 (parse-object s n c gen triples)
+                                                                 (catch ExceptionInfo e nil))]
+                                           (recur parse-result)
+                                           [n c gen triples]))
                                     (throw-unex *loc* "Unexpected separator in predicate-object list: " s n))))]
         (if (= c \;)
           (let [n' (inc n)
