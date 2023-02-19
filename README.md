@@ -9,12 +9,12 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Leiningen/Boot
 ```clojure
-[org.clojars.quoll/raphael "0.1.1"]
+[org.clojars.quoll/raphael "0.1.2"]
 ```
 
 ### Clojure CLI/deps.edn
 ```clojure
-org.clojars.quoll/raphael {:mvn/version "0.1.1"}
+org.clojars.quoll/raphael {:mvn/version "0.1.2"}
 ```
 
 After bringing in the project, just use the `parse` function on a string.
