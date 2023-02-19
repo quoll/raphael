@@ -808,7 +808,7 @@
         (if (= c \;)
           (let [n' (inc n)
                 [n c] (skip-whitespace s n' (char-at s n'))]
-            (recur (parse-iri s n c gen triples)))
+            (recur (maybe-parse-predicate s n c gen triples)))
           [n c gen triples])))))
 
 (defn anon-blank-node
