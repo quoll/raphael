@@ -18,6 +18,7 @@
 .socket-repl-port
 .sw*
 .vscode
+build-CHANGELOG.md
 *.class
 *.jar
 *.swp

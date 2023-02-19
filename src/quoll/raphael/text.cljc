@@ -95,19 +95,25 @@
   [s start end]
   (subs s start (min end (count s))))
 
+(defn char-code
+  [c]
+  #?(:clj (long c)
+     :cljs (.charCodeAt c 0)))
+
 (defn high-surrogate?
   "Tests if a character is both a high surrogate (0xD800 <= c <= 0xDBFF)
   and also in range (0xD800 <= c <= 0xDB7F) which matches the character range 0x10000 to 0xEFFFF"
   [c]
-  (<= 0xD800 (long c) 0xDB7F))
+  (<= 0xD800 (char-code c) 0xDB7F))
 
 (defn low-surrogate?
   "Tests if a character is a low surrogate (0xDC00 <= c <= 0xDFFF)
   which matches the character range 0x10000 to 0xEFFFF"
   [c]
-  (<= 0xDC00 (long c) 0xDFFF))
+  (<= 0xDC00 (char-code c) 0xDFFF))
 
 (defn surrogates
   "Converts a long value to a high/log surrogate pair."
   [u]
   [(+ 0xd7c0 (unsigned-bit-shift-right u 10)) (+ 0xDC00 (bit-and u 0x3FF))])
+

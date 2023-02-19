@@ -7,12 +7,29 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ## Usage
 
+### Leiningen/Boot
+```clojure
+[org.clojars.quoll/raphael "0.1.0"]
+```
+
+### Clojure CLI/deps.edn
+```clojure
+org.clojars.quoll/raphael {:mvn/version "0.1.0"}
+```
+
 After bringing in the project, just use the `parse` function on a string.
 ```clojure
 (:require '[quoll.raphael.core :refer [parse]])
 
 (parse (slurp "data.ttl"))
 ```
+
+This returns an in-memory structure with 3 fields:
+ - **:base** (optional) A string with the base IRI of the document at the time of exit.
+ - **:namespaces** A map of prefix strings to strings containing namespace IRIs.
+ - **:triples** A vector of triples. Triples are a 3 element vector.
+
+The output could be streamed instead of going to a structure, but this is not publicly accessible. Please ask if this is desired.
 
 ## Pluggable
 
@@ -42,7 +59,19 @@ The Generator protocol defines the following functions:
  - `rdf-rest` Returns a constant IRI value for `rdf:rest`.
  - `rdf-nil` Returns a constant IRI value for `rdf:nil`.
 
-These functions should have trivial implementations. They are used to adapt the return types of the parser to objects that are compatible with the calling system. A Generator that creates internal types is provided by default.
+These functions should have trivial implementations. They are used to adapt the return types of the parser to objects that are compatible with the calling system.
+
+If no Generator is provided, then a default generator is used. The default generator created internal objects which all support the `str` function:
+ - `quoll.raphael.core/Iri` - an IRI reference. This will print as a QName if it was read that way. Use `as-iri-string` to get the full IRI, even if it can be represented as a QName.
+ - `quoll.raphael.core/BlankNode` - A blank node.
+ - `quoll.raphael.core/Literal` - A literal containing a string representation of the literal, and either a language code, or a datatype IRI.
+
+Simple literals will typically be returned as native data types:
+ - String
+ - Long Integer
+ - Double
+ - Boolean
+
 
 ## Principles
 
