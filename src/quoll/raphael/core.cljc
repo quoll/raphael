@@ -422,6 +422,7 @@
   "Parse a prefix:local-name pair.
   s - The string to parse.
   n - The offset to parse from.
+  pre - Optional. The initial part of the string that has already been parsed.
   c - the first character of the prefixed name.
   gen - the generator
   triples - the current triples.
@@ -431,26 +432,28 @@
   qname - The prefixed name as a Iri.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
-  [s n c gen triples]
-  (when-not (or (pn-chars-base? c) (= \: c))
-    (throw-unex *loc* "Prefix char starts with illegal character" s n))
-  (let [sb (text/string-builder)
-        [n prefix] (loop [n n c c dot false]
-                     (if (= \: c)
-                       (if dot
-                         (throw-unex *loc* "Prefix illegally ends with a '.': " s n)
-                         [(inc n) (str sb)])
-                       (if (pn-chars-dot? c)
-                         (let [n' (inc n)]
-                           (text/append! sb c)
-                           (recur n' (char-at s n') (dot? c)))
-                         (if (and (whitespace? c) (= "a" (str sb)))
-                           [(inc n) nil]
-                           (throw-unex *loc* (str "Illegal character '" c "' in prefix: ") s n)))))]
-    (if prefix
-      (let [[n c local] (parse-local s n)]
-        [n c (new-qname gen prefix local) gen triples])
-      [n (char-at s n) (rdf-type gen) gen triples])))
+  ([s n c gen triples]
+   (when-not (or (pn-chars-base? c) (= \: c))
+     (throw-unex *loc* "Prefix char starts with illegal character" s n))
+   (parse-prefixed-name s n nil c gen triples))
+  ([s n pre c gen triples]
+   (let [sb (if pre (text/string-builder pre) (text/string-builder))
+         [n prefix] (loop [n n c c dot false]
+                      (if (= \: c)
+                        (if dot
+                          (throw-unex *loc* "Prefix illegally ends with a '.': " s n)
+                          [(inc n) (str sb)])
+                        (if (pn-chars-dot? c)
+                          (let [n' (inc n)]
+                            (text/append! sb c)
+                            (recur n' (char-at s n') (dot? c)))
+                          (if (and (whitespace? c) (= "a" (str sb)))
+                            [(inc n) nil]
+                            (throw-unex *loc* (str "Illegal character '" c "' in prefix: ") s n)))))]
+     (if prefix
+       (let [[n c local] (parse-local s n)]
+         [n c (new-qname gen prefix local) gen triples])
+       [n (char-at s n) (rdf-type gen) gen triples]))))
 
 (defn parse-iri
   "Parse an iri.
@@ -934,6 +937,33 @@
         (let [n' (inc n)]
           [n' (char-at s n') gen triples])))))
 
+(defn pre-parse-triples
+  "Parse a top level triples from a string,
+  with some of the first triple already parsed as a prefixed stirng.
+  s - the string to parse from.
+  n - the offset in the string to retrieve from.
+  c - the character found at position n.
+  gen - the generator to use for blank nodes.
+  triples - A transient vector of triples.
+  return: [n c gen triples]
+  n - the new offset after parsing.
+  c - the character at offset n.
+  gen - the next generator state.
+  triples - the triples generated from parsing this line."
+  [s n c gen triples pre]
+  (let [initial-count (count triples)]
+    (if (= :eof c)
+      (throw-unex *loc* "Unexpected termination while parsing a prefixed line: " s n)
+      (let [[n c subject gen triples enf?] (parse-prefixed-name s n pre c gen triples)
+            [n c] (skip-whitespace s n c)
+            [n c gen triples] (parse-predicate-object-list s n c subject gen triples)]
+        (when-not (= \. c)
+          (throw-unex *loc* "Statements invalidly terminated: " s n))
+        (when (and (not enf?) (= initial-count (count triples)))
+          (throw-unex *loc* "Subjects require predicates and objects: " s n))
+        (let [n' (inc n)]
+          [n' (char-at s n') gen triples])))))
+
 (defn parse-prefix-iri-end
   "Parse an iri and a newline for a PREFIX or BASE directive.
   NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
@@ -1004,9 +1034,18 @@
                         (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
                                            (whitespace? (char-at s (+ n 4))))
                                   (parse-base-end s n gen newline? 4))
-                        (\P \p) (when (and (= (str/lower-case (subs s (inc n) (+ n 6))) "refix")
-                                           (whitespace? (char-at s (+ n 6))))
-                                  (parse-prefix-iri-end s n gen newline? 6))
+                        (\P \p) (let [text (string-buffer)]
+                                  (append! text cs)
+                                  (loop [np n cp c]
+                                    (if (str/starts-with? "prefix" (str/lower-case (str text)))
+                                      (if (< cp (+ c 6))
+                                        (do
+                                          (append! text cp)
+                                          (recur (inc np) (char-at s np)))
+                                        (if (whitespace? cp)
+                                          (parse-prefix-iri-end s np gen newline? 0)
+                                          (pre-parse-triples s np gen triples (str text))))
+                                      (pre-parse-triples s np gen triples (str text)))))
                         :eof [n c gen triples]
                         nil)]
      (if n'

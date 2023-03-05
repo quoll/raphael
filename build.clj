@@ -5,6 +5,8 @@
 
 (def lib 'org.clojars.quoll/raphael)
 (def version "0.1.6")
+;; alternatively, use MAJOR.MINOR.COMMITS:
+#_(def version (format "1.0.%s" (b/git-count-revs nil)))
 
 ;; clojure -T:build test
 (defn test "Run the tests." [opts]
