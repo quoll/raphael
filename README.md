@@ -155,6 +155,6 @@ but this is less available on JavaScript.
 
 ## License
 
-Copyright © 2022 Paula Gearon
+Copyright © 2023 Paula Gearon
 
-Distributed under the Eclipse Public License version 1.0.
+Distributed under the Eclipse Public License version 2.0.
