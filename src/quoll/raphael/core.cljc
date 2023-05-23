@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [quoll.raphael.m :refer [throw-unex] :include-macros true]
             [quoll.raphael.text :as text :refer [char-at]]
-            [quoll.raphael.triples :as triples])
+            [quoll.raphael.triples :as triples]
+            [tiara.data :refer [EMPTY_MAP]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
@@ -136,7 +137,7 @@
   (rdf-rest [this] RDF-REST)
   (rdf-nil [this] RDF-NIL))
 
-(defn new-generator [] (->Generator 0 {} {}))
+(defn new-generator [] (->Generator 0 {} EMPTY_MAP))
 
 (defn add-range
   "Adds a range of characters into set.
