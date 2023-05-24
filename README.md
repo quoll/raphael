@@ -14,7 +14,7 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Clojure CLI/deps.edn
 ```clojure
-org.clojars.quoll/raphael {:mvn/version "0.1.3"}
+org.clojars.quoll/raphael {:mvn/version "0.1.4"}
 ```
 
 After bringing in the project, just use the `parse` function on a string.
