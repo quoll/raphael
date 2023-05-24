@@ -9,7 +9,7 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Leiningen/Boot
 ```clojure
-[org.clojars.quoll/raphael "0.1.3"]
+[org.clojars.quoll/raphael "0.1.4"]
 ```
 
 ### Clojure CLI/deps.edn
