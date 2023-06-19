@@ -84,6 +84,18 @@
      [s n]
      (if (< n (.-length s)) (.charAt s n) :eof)))
 
+(defn lower-case-char
+  "Converts a single character to lower-case.
+   Characters in ClojureScript are single-element strings."
+  [c]
+  #?(:clj (Character/toLowerCase c)
+     :cljs (str/lower-case c)))
+
+(defn read-chars
+  "Reads x characters from the provided offset in a string"
+  [s n x]
+  (subs s n (+ n x)))
+
 (defn parse-hex
   "Parses a hexadecimal string into a long"
   [s]

@@ -230,8 +230,8 @@
   c - The character at position n.
   chars - the set of chars to skip to.
   return: [n c]
-  n - the new offset after skipping whitespace to the end of the line.
-  c - the first non-whitespace character, found at position n"
+  n - after skipping whitespace the new offset immediately after the requested character.
+  c - the first character after the requested character, found at position n"
   [s n c chars]
   (loop [n n c c]
     (cond
@@ -945,6 +945,7 @@
   c - the character found at position n.
   gen - the generator to use for blank nodes.
   triples - A transient vector of triples.
+  pre - the previously read prefix of the line
   return: [n c gen triples]
   n - the new offset after parsing.
   c - the character at offset n.
@@ -989,7 +990,7 @@
       (throw-unex *loc* "Unknown statement: " s n))))
 
 (defn parse-base-end
-  "Parse an iri and a dot.
+  "Parse an iri and the end-char for the end of the line.
   NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   s - The string to parse from.
   n - The offset to start the parse from.
@@ -1019,7 +1020,7 @@
   c - the character at position n. (Optional: can be inferred)
   gen - The current generator.
   triples - The current triples.
-  ambiguous-text - The text that can start either type of line.
+  common-text - The text that can start either type of line.
   non-triples-op - The function to use to parse the line if it does not contain triples.
                    This function accepts the string and offset into the string
   return: [n c gen triples]
@@ -1027,19 +1028,18 @@
   c - the character at position n.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  [s n c gen triples ambiguous-text non-triples-op]
-  (let [ambiguous-len (count ambiguous-text)
-        text (string-buffer)]
-    (append! text c)
-    (loop [np n cp c]
-      (if (str/starts-with? ambiguous-text (str/lower-case (str text)))
-        (if (< np (+ n 6))
-          (do (append! text cp)
-              (recur (inc np) (char-at s np)))
-          (if (whitespace? cp)
-            (non-triples-op s np)
-            (pre-parse-triples s np gen triples (str text))))
-        (pre-parse-triples s np gen triples (str text))))))
+  [s n c gen triples common-text non-triples-op]
+  (let [common-len (count common-text)
+        text (text/string-builder)]
+    (loop [a 0 cp c]
+      (if (and (< a common-len) (= (text/char-at common-text a) (text/lower-case-char cp)))
+        (let [na (inc a)]
+          (text/append! text cp)
+          (recur na (char-at s (+ n na))))
+        (let [nn (+ n a)]
+          (if (whitespace? cp) ;; should only occur when the common length was reached
+            (non-triples-op s nn)
+            (pre-parse-triples s nn cp gen triples (str text))))))))
 
 (defn parse-statement
   "Parse a directive or triples.
@@ -1057,13 +1057,13 @@
   ([s n c gen triples]
    (let [[n c] (skip-whitespace s n c)
          [n' c' gen' triples'] (case c
-                                 \@ (cond
-                                      (= (str/lower-case (subs s (inc n) (+ n 5))) "base")
-                                      (parse-base-end s n gen dot? 5)
-                                      (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix")
-                                      (parse-prefix-iri-end s n gen dot? 7)
-                                      :default
-                                      (throw-unex *loc* "Unknown statement: " s n))
+                                 \@ (let [text (text/read-chars s (inc n) 4)]
+                                      (if (= text "base")
+                                        (parse-base-end s n gen dot? 5)
+                                        (let [text2 (str text (text/read-chars s (+ n 5) 2))]
+                                          (if (= text2 "prefix")
+                                            (parse-prefix-iri-end s n gen dot? 7)
+                                            (throw-unex *loc* "Unknown statement: " s n)))))
                                  (\B \b) (parse-ambiguous-line s n c gen triples "base"
                                                                #(parse-base-end %1 %2 gen newline? 0))
                                  (\P \p) (parse-ambiguous-line s n c gen triples "prefix"
