@@ -91,11 +91,6 @@
   #?(:clj (Character/toLowerCase c)
      :cljs (str/lower-case c)))
 
-(defn read-chars
-  "Reads x characters from the provided offset in a string"
-  [s n x]
-  (subs s n (+ n x)))
-
 (defn parse-hex
   "Parses a hexadecimal string into a long"
   [s]

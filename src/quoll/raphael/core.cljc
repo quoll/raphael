@@ -438,7 +438,6 @@
    (parse-prefixed-name s n nil c gen triples))
   ([s n pre c gen triples]
    (let [sb (or pre (text/string-builder))
-         ([
          [n prefix] (loop [n n c c dot false]
                       (if (= \: c)
                         (if dot
