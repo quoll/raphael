@@ -1011,6 +1011,36 @@
         [n c (add-base gen iri)])
       (throw-unex *loc* "Unknown statement: " s n))))
 
+(defn parse-ambiguous-line
+  "Reads a line up to the point where ambiguity can be resolved.
+  Processes the line as either the beginning of triples, or a provided operation.
+  s - The string to parse.
+  n - The position in the string to parse from.
+  c - the character at position n. (Optional: can be inferred)
+  gen - The current generator.
+  triples - The current triples.
+  ambiguous-text - The text that can start either type of line.
+  non-triples-op - The function to use to parse the line if it does not contain triples.
+                   This function accepts the string and offset into the string
+  return: [n c gen triples]
+  n - the new offset after parsing.
+  c - the character at position n.
+  gen - the next generator state.
+  triples - the triples generated from parsing this line."
+  [s n c gen triples ambiguous-text non-triples-op]
+  (let [ambiguous-len (count ambiguous-text)
+        text (string-buffer)]
+    (append! text c)
+    (loop [np n cp c]
+      (if (str/starts-with? ambiguous-text (str/lower-case (str text)))
+        (if (< np (+ n 6))
+          (do (append! text cp)
+              (recur (inc np) (char-at s np)))
+          (if (whitespace? cp)
+            (non-triples-op s np)
+            (pre-parse-triples s np gen triples (str text))))
+        (pre-parse-triples s np gen triples (str text))))))
+
 (defn parse-statement
   "Parse a directive or triples.
   s - The string to parse.
@@ -1026,30 +1056,22 @@
   ([s n gen triples] (parse-statement s n (char-at s n) gen triples))
   ([s n c gen triples]
    (let [[n c] (skip-whitespace s n c)
-         [n' c' gen'] (case c
-                        \@ (cond
-                             (= (str/lower-case (subs s (inc n) (+ n 5))) "base") (parse-base-end s n gen dot? 5)
-                             (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix") (parse-prefix-iri-end s n gen dot? 7)
-                             :default (throw-unex *loc* "Unknown statement: " s n))
-                        (\B \b) (when (and (= (str/lower-case (subs s (inc n) (+ n 4))) "ase")
-                                           (whitespace? (char-at s (+ n 4))))
-                                  (parse-base-end s n gen newline? 4))
-                        (\P \p) (let [text (string-buffer)]
-                                  (append! text cs)
-                                  (loop [np n cp c]
-                                    (if (str/starts-with? "prefix" (str/lower-case (str text)))
-                                      (if (< cp (+ c 6))
-                                        (do
-                                          (append! text cp)
-                                          (recur (inc np) (char-at s np)))
-                                        (if (whitespace? cp)
-                                          (parse-prefix-iri-end s np gen newline? 0)
-                                          (pre-parse-triples s np gen triples (str text))))
-                                      (pre-parse-triples s np gen triples (str text)))))
-                        :eof [n c gen triples]
-                        nil)]
+         [n' c' gen' triples'] (case c
+                                 \@ (cond
+                                      (= (str/lower-case (subs s (inc n) (+ n 5))) "base")
+                                      (parse-base-end s n gen dot? 5)
+                                      (= (str/lower-case (subs s (inc n) (+ n 7))) "prefix")
+                                      (parse-prefix-iri-end s n gen dot? 7)
+                                      :default
+                                      (throw-unex *loc* "Unknown statement: " s n))
+                                 (\B \b) (parse-ambiguous-line s n c gen triples "base"
+                                                               #(parse-base-end %1 %2 gen newline? 0))
+                                 (\P \p) (parse-ambiguous-line s n c gen triples "prefix"
+                                                               #(parse-prefix-iri-end %1 %2 gen newline? 0))
+                                 :eof [n c gen triples]
+                                 nil)]
      (if n'
-       [n' c' gen' triples]
+       [n' c' gen' (or triples' triples)]
        (parse-triples s n c gen triples)))))
 
 (defn parse
