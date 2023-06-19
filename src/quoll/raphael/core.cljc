@@ -422,7 +422,7 @@
   "Parse a prefix:local-name pair.
   s - The string to parse.
   n - The offset to parse from.
-  pre - Optional. The initial part of the string that has already been parsed.
+  pre - Optional. The initial part of the string that has already been parsed as a string builder.
   c - the first character of the prefixed name.
   gen - the generator
   triples - the current triples.
@@ -437,7 +437,7 @@
      (throw-unex *loc* "Prefix char starts with illegal character" s n))
    (parse-prefixed-name s n nil c gen triples))
   ([s n pre c gen triples]
-   (let [sb (if pre (text/string-builder pre) (text/string-builder))
+   (let [sb (or pre (text/string-builder))
          [n prefix] (loop [n n c c dot false]
                       (if (= \: c)
                         (if dot
@@ -873,6 +873,35 @@
            (parse-blank-node-entity s n c gen triples)))
     (parse-prefixed-name s n c gen triples)))
 
+(defn parse-ambiguous-elt
+  "Reads an object to the point where ambiguity can be resolved.
+  Processes text as either a prefixed name or the text being searched on.
+  s - The string to parse.
+  n - The position in the string to parse from.
+  c - the character at position n.
+  gen - The current generator.
+  triples - The current triples.
+  common-text - The text that can start either type of line.
+  non-iri-op - The function to use to parse the line if it does not contain triples.
+                   This function accepts the string and offset into the string
+  return: [n c gen triples]
+  n - the new offset after parsing.
+  c - the character at position n.
+  gen - the next generator state.
+  obj - the object generated from parsing this object."
+  [s n c gen triples common-text non-iri-op]
+  (let [common-len (count common-text)
+        text (text/string-builder (subs common-text 0 1))]
+    (loop [a 1 cp (char-at s (inc n))]
+      (if (and (< a common-len) (= (text/char-at common-text a) (text/lower-case-char cp)))
+        (let [na (inc a)]
+          (text/append! text cp)
+          (recur na (char-at s (+ n na))))
+        (let [nn (+ n a)]
+          (if (or (pn-chars? cp) (= \: cp))
+            (parse-prefixed-name s nn text cp gen triples)
+            (non-iri-op)))))))
+
 (defn parse-object
   "Parse an object entity, including any triples.
   s - the string to parse.
@@ -899,16 +928,13 @@
            (parse-blank-node-entity s n c gen triples)))
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number s n c gen triples)
     (\' \") (parse-literal s n c gen triples)
-    (cond
-      (and (= c \f)
-           (= "alse" (text/ssubs s (inc n) (+ n 5)))
-           (not (pn-chars? (char-at s (+ n 5))))) (let [n' (+ n 5)]
-                                                    [n' (char-at s n') false gen triples])
-      (and (= c \t)
-           (= "rue" (text/ssubs s (inc n) (+ n 4)))
-           (not (pn-chars? (char-at s (+ n 4))))) (let [n' (+ n 4)]
-                                                    [n' (char-at s n') true gen triples])
-      :default (parse-prefixed-name s n c gen triples))))
+    \f (parse-ambiguous-elt s n c gen triples "false"
+                            (fn [] (let [n' (+ n 5)]
+                                     [n' (char-at s n') false gen triples])))
+    \t (parse-ambiguous-elt s n c gen triples "true"
+                            (fn [] (let [n' (+ n 4)]
+                                     [n' (char-at s n') true gen triples])))
+    (parse-prefixed-name s n c gen triples)))
 
 (defn parse-triples
   "Parse a top level triples from a string.
@@ -945,7 +971,7 @@
   c - the character found at position n.
   gen - the generator to use for blank nodes.
   triples - A transient vector of triples.
-  pre - the previously read prefix of the line
+  pre - the previously read prefix of the line in a string builder
   return: [n c gen triples]
   n - the new offset after parsing.
   c - the character at offset n.
@@ -1039,7 +1065,7 @@
         (let [nn (+ n a)]
           (if (whitespace? cp) ;; should only occur when the common length was reached
             (non-triples-op s nn)
-            (pre-parse-triples s nn cp gen triples (str text))))))))
+            (pre-parse-triples s nn cp gen triples text)))))))
 
 (defn parse-statement
   "Parse a directive or triples.
@@ -1057,10 +1083,10 @@
   ([s n c gen triples]
    (let [[n c] (skip-whitespace s n c)
          [n' c' gen' triples'] (case c
-                                 \@ (let [text (text/read-chars s (inc n) 4)]
+                                 \@ (let [text (text/ssubs s (inc n) (+ n 5))]
                                       (if (= text "base")
                                         (parse-base-end s n gen dot? 5)
-                                        (let [text2 (str text (text/read-chars s (+ n 5) 2))]
+                                        (let [text2 (str text (text/ssubs s (+ n 5) (+ n 7)))]
                                           (if (= text2 "prefix")
                                             (parse-prefix-iri-end s n gen dot? 7)
                                             (throw-unex *loc* "Unknown statement: " s n)))))
