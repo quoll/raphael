@@ -314,12 +314,18 @@
   char - the character code that was parsed"
   [s n f]
   (case f
-    \u (let [end (+ n 5)]
-         [end (char-at s end) (char (text/parse-hex (subs s (inc n) end)))])
+    \u (let [end (+ n 5)
+             end-char (char-at s end)]
+         (if (= :eof end-char)
+           (throw-unex *loc* "Unexpected end of file while parsing a unicode sequence" s n)
+           [end end-char (char (text/parse-hex (text/ssubs s (inc n) end)))]))
     \U (let [end (+ n 9)
-             unicode (text/parse-hex (subs s (inc n) end))
-             [high low] (text/surrogates unicode)]
-         [end (char-at s end) (str (char high) (char low))])
+             end-char (char-at s end)]
+         (if (= :eof end-char)
+           (throw-unex *loc* "Unexpected end of file while parsing a long unicode sequence" s n)
+           (let [unicode (text/parse-hex (subs s (inc n) end))
+                 [high low] (text/surrogates unicode)]
+             [end end-char (str (char high) (char low))])))
     (throw-unex *loc* "Unexpected non-U character when processing unicode escape" s n)))
 
 ;; A regex to find the scheme at the start of an IRI
@@ -642,8 +648,6 @@
              (throw-unex *loc* "Bad language tag on literal: " s n')))
       [n c lit-str gen triples])))
 
-(def end-mantissa? #{\e \E :eof})
-
 (defn parse-number
   "Parse a numeric literal.
   s - the string to parse.
@@ -658,26 +662,56 @@
   gen - the updated generator
   triples - the triples generated in parsing the node."
   [s n c gen triples]
-  ;; at a minimum, up-to-dot will be populated by at least a sign, a digit, or a dot
-  (let [up-to-dot (re-find #"[+-]?[0-9]*\.?" (subs s n))
-        nd (+ n (count up-to-dot))
-        [after-dot exp] (re-find #"^[0-9]*([eE][+-]?[0-9]+)?" (subs s nd))
-        n' (+ nd (count after-dot))
-        nextc (char-at s n')
-        full-nr (subs s n n')
-        ;; test here to avoid catching an exception in the core parser
-        _ (when (let [frst (.charAt up-to-dot 0)]
-                  (or (and (#{\+ \-} frst)
-                           (let [sec (char-at full-nr 1)]
-                             (or (end-mantissa? sec)
-                                 (and (= \. sec) (end-mantissa? (char-at full-nr 2))))))
-                      (and (= \. frst) (end-mantissa? (char-at full-nr 1)))
-                      (and (nil? exp) (#{\e \E} nextc))))
-            (throw-unex *loc* (str "Invalid number: '" full-nr "' in:") s n))
-        nr (if (or (= \. (text/last-char-str up-to-dot)) (re-find #"[eE]" after-dot))
-             (parse-double full-nr)
-             (parse-long full-nr))]
-    [n' nextc nr gen triples]))
+  (let [init-n n
+        sb (text/string-builder)
+        ;; determine the sign
+        [n c] (case c
+                \+ (let [n' (inc n)]
+                     [n' (char-at s n')])
+                \- (let [n' (inc n)]
+                     (text/append! sb c)
+                     [n' (char-at s n')])
+                [n c])
+        ;; get all the digits, and up to 1 dot. If a dot exists, then dbl? will be true
+        [n c dbl? digits?] (loop [ln n lc c d? false dg? false]
+                             (case lc
+                               (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (let [n' (inc ln)]
+                                                                 (text/append! sb lc)
+                                                                 (recur n' (char-at s n') d? true))
+                               \. (if d?
+                                    [ln lc d? dg?]
+                                    (let [n' (inc ln)]
+                                      (text/append! sb lc)
+                                      (recur n' (char-at s n') true dg?)))
+                               [ln lc d? dg?]))
+        _ (when-not digits?
+            (throw-unex *loc* (str "Invalid floating point number '" sb "' in:") s init-n))
+        ;; read an exponent trailer, if one exists
+        [n c dbl?] (if (or (= c \e) (= c \E))
+                     (let [_ (text/append! sb c)
+                           n' (inc n)
+                           c' (char-at s n')
+                           ;; read the optional exponent sign
+                           [n' c'] (if (or (= c' \+) (= c' \-))
+                                     (let [i (inc n')]
+                                       (text/append! sb c')
+                                       [i (char-at s i)])
+                                     [n' c'])]
+                       ;; read the exponent digits
+                       (loop [i n' cc c' dgts? false]
+                         (case cc
+                           (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (let [i' (inc i)]
+                                                             (text/append! sb cc)
+                                                             (recur i' (char-at s i') true))
+                           (if dgts?
+                             [i cc true]
+                             (throw-unex *loc* (str "Invalid floating point number '" sb "' in:") s init-n)))))
+                     ;; no exponent
+                     [n c dbl?])
+        nr (if dbl?
+             (parse-double (str sb))
+             (parse-long (str sb)))]
+    [n c nr gen triples]))
 
 (declare parse-predicate parse-object)
 
