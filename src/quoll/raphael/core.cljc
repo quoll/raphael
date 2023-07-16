@@ -323,7 +323,7 @@
              end-char (char-at s end)]
          (if (= :eof end-char)
            (throw-unex *loc* "Unexpected end of file while parsing a long unicode sequence" s n)
-           (let [unicode (text/parse-hex (subs s (inc n) end))
+           (let [unicode (text/parse-hex (text/ssubs s (inc n) end))
                  [high low] (text/surrogates unicode)]
              [end end-char (str (char high) (char low))])))
     (throw-unex *loc* "Unexpected non-U character when processing unicode escape" s n)))

@@ -3,7 +3,7 @@
             [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline? add-base
                                         parse-iri-ref add-prefix new-generator parse-statement
                                         parse-local parse-prefixed-name parse-number parse-string
-                                        parse-long-string parse-literal
+                                        parse-long-string parse-literal parse-lang-tag
                                         anon-blank-node parse-blank-node-entity parse-blank-node
                                         new-lang-string new-literal new-iri
                                         ->BlankNode ->Iri new-qname
@@ -293,6 +293,24 @@
     (is (= [25 :eof "hello '' wörld"] (parse-long-string \' "'''hello '' w\\u00f6rld'''" 3 \h)))
     (is (thrown? ExceptionInfo (parse-long-string \' "'''hello w\\U0001FAE4rld\"'' " 3 \h)))))
 
+
+(deftest lang-tag-test
+  (testing "Parsing language tags"
+    (let [g (new-generator)]
+      (is (= [2 \space (new-lang-string g "" "en") g nil]
+             (parse-lang-tag "en " 0 \e g nil "")))
+      (is (= [5 :eof (new-lang-string g "" "en-uk") g nil]
+             (parse-lang-tag "en-uk" 0 \e g nil "")))
+      (is (= [10 \. (new-lang-string g "" "en-uk-scot") g nil]
+             (parse-lang-tag "en-uk-scot." 0 \e g nil "")))
+      (is (= [15 \space (new-lang-string g "" "en-uk-scot-nth2") g nil]
+             (parse-lang-tag "en-uk-scot-nth2 " 0 \e g nil "")))
+      (is (= [2 \1 (new-lang-string g "" "en") g nil]
+             (parse-lang-tag "en1-uk-scot-nth2 " 0 \e g nil "")))
+      (is (thrown? ExceptionInfo (parse-lang-tag "en-uk-scot- " 0 \e g nil "")))
+      (is (thrown? ExceptionInfo (parse-lang-tag "en-uk- " 0 \e g nil "")))
+      (is (thrown? ExceptionInfo (parse-lang-tag "en- " 0 \e g nil "")))
+      )))
 
 (defn parse-literal'
   ([s g] (parse-literal s 0 (char-at s 0) g nil))
