@@ -609,6 +609,67 @@
                 (text/append! sb current)
                 (recur n' false next-char)))))))))
 
+(defn parse-lang-tag
+  "Parse the language tag from a literal. The @ character has already been parsed.
+  s - the string to parse.
+  n - the offset to parse from.
+  c - the char found at position n.
+  gen - the node generator.
+  triples - the current triples.
+  lit-str - the literal string that this tag affects.
+  return: [n c literal gen triples]
+  n - the offset immediately after the subject.
+  c - the character at offset n.
+  literal - the parsed value, as a language literal.
+  gen - the updated generator.
+  triples - the triples generated in parsing the node."
+  [s n c gen triples lit-str]
+  (let [sb (text/string-builder)
+        [nn nc] (loop [n' n c' c]
+                  (if (= :eof c')
+                    [n' c']
+                    (let [cn (int c')
+                          next-n (inc n')]
+                      (cond
+                        (and (<= cn (int \z)) (>= cn (int \A))
+                             (or (>= cn (int \a)) (<= cn (int \Z))))
+                        (do (text/append! sb c')
+                            (recur next-n (char-at s next-n)))
+
+                        (= c' \-)
+                        (if (not= n' n)
+                          (do (text/append! sb c')
+                              [next-n])
+                          (throw-unex *loc* "Bad language tag on literal: " s n))
+                        
+                        :default
+                        [n' c']))))]
+    (if nc
+      [nn nc (new-lang-string gen lit-str (str sb)) gen triples]
+      (loop [n' nn c' (char-at s nn) last-group nn]
+        (if (= :eof c')
+          [n' c' (new-lang-string gen lit-str (str sb)) gen triples]
+          (let [cn (int c')
+                next-n (inc n')]
+            (cond
+              (and (<= cn (int \z)) (>= cn (int \0))
+                   (or (>= cn (int \a))
+                       (and (<= cn (int \Z)) (>= cn (int \A)))
+                       (<= cn (int \9))))
+              (do (text/append! sb c')
+                  (recur next-n (char-at s next-n) last-group))
+
+              (= c' \-)
+              (if (not= n' last-group)
+                (do (text/append! sb c')
+                    (recur next-n (char-at s next-n) next-n))
+                (throw-unex *loc* "Bad language tag on literal: " s n))
+              
+              :default
+              (if (= n' last-group)
+                (throw-unex *loc* "Bad language tag on literal: " s n)
+                [n' c' (new-lang-string gen lit-str (str sb)) gen triples]))))))))
+
 (defn parse-literal
   "Parse a literal that starts with a quote character. This also includes the
   triple quote form that allows for raw unescaped strings.
@@ -617,7 +678,7 @@
   c - the char found at position n. This is a quote: either ' or \"
   gen - the node generator.
   triples - the current triples.
-  return: [n c value]
+  return: [n c value gen triples]
   n - the offset immediately after the subject.
   c - the character at offset n.
   value - the parsed value, in string form if it is plain.
@@ -642,10 +703,7 @@
              [n' c' (new-literal gen lit-str iri) gen triples])
            (throw-unex *loc* "Badly formed type expression on literal. Expected ^^: " s n))
       \@ (let [n' (inc n)]
-           (if-let [[lang] (re-find #"^[a-zA-Z]+(-[a-zA-Z0-9]+)*" (subs s n'))]
-             (let [end (+ n' (count lang))]
-               [end (char-at s end) (new-lang-string gen lit-str lang) gen triples])
-             (throw-unex *loc* "Bad language tag on literal: " s n')))
+           (parse-lang-tag s n' (char-at s n') gen triples lit-str))
       [n c lit-str gen triples])))
 
 (defn parse-number
