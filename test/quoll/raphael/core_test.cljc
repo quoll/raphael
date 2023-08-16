@@ -6,7 +6,7 @@
                                         parse-long-string parse-literal
                                         anon-blank-node parse-blank-node-entity parse-blank-node
                                         new-lang-string new-literal new-iri
-                                        ->BlankNode ->Iri new-qname
+                                        ->BlankNode ->IriRef new-qname
                                         RDF-NIL RDF-FIRST RDF-REST RDF-TYPE
                                         parse-predicate-object-list parse-collection
                                         parse]]
@@ -209,19 +209,19 @@
                 (add-prefix "a-b-c" "http://t1.org/")
                 (add-prefix "a_b" "http://t2.org/")
                 (add-prefix "a.b" "http://t3.org/"))]
-      (is (= [6 \space (->Iri "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [6 \space (->IriRef "ex" "cat" "http://ex.com/cat") g nil]
              (parse-prefixed-name' "ex:cat " 0 \e g)))
-      (is (= [6 \. (->Iri "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [6 \. (->IriRef "ex" "cat" "http://ex.com/cat") g nil]
              (parse-prefixed-name' "ex:cat. " 0 \e g)))
-      (is (= [4 \space (->Iri "" "cat" "http://test.org/cat") g nil]
+      (is (= [4 \space (->IriRef "" "cat" "http://test.org/cat") g nil]
              (parse-prefixed-name' ":cat " 0 \: g)))
-      (is (= [4 \. (->Iri "" "cat" "http://test.org/cat") g nil]
+      (is (= [4 \. (->IriRef "" "cat" "http://test.org/cat") g nil]
              (parse-prefixed-name' ":cat. " 0 \: g)))
-      (is (= [9 \space (->Iri "a-b-c" "cat" "http://t1.org/cat") g nil]
+      (is (= [9 \space (->IriRef "a-b-c" "cat" "http://t1.org/cat") g nil]
              (parse-prefixed-name' "a-b-c:cat " 0 \a g)))
-      (is (= [7 \space (->Iri "a_b" "cat" "http://t2.org/cat") g nil]
+      (is (= [7 \space (->IriRef "a_b" "cat" "http://t2.org/cat") g nil]
              (parse-prefixed-name' "a_b:cat " 0 \a g)))
-      (is (= [7 \space (->Iri "a.b" "cat" "http://t3.org/cat") g nil]
+      (is (= [7 \space (->IriRef "a.b" "cat" "http://t3.org/cat") g nil]
              (parse-prefixed-name' "a.b:cat " 0 \a g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' "_b:cat " 0 \_ g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' ".b:cat " 0 \. g)))
@@ -320,7 +320,7 @@
       (is (= [38 :eof (new-literal g "hello world" (new-iri g "http://xsd.org/string")) g nil]
              (parse-literal' "\"hello world\"^^<http://xsd.org/string>" g)))
       (is (= [25 :eof (new-literal g "hello world"
-                                   (->Iri "xsd" "string" "http://xsd.org/string"))
+                                   (->IriRef "xsd" "string" "http://xsd.org/string"))
               g nil]
              (parse-literal' "\"hello world\"^^xsd:string" g))))))
 

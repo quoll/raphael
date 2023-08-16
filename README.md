@@ -9,12 +9,12 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Leiningen/Boot
 ```clojure
-[org.clojars.quoll/raphael "0.1.6"]
+[org.clojars.quoll/raphael "0.2.0"]
 ```
 
 ### Clojure CLI/deps.edn
 ```clojure
-org.clojars.quoll/raphael {:mvn/version "0.1.6"}
+org.clojars.quoll/raphael {:mvn/version "0.2.0"}
 ```
 
 After bringing in the project, just use the `parse` function on a string.
@@ -62,7 +62,7 @@ The Generator protocol defines the following functions:
 These functions should have trivial implementations. They are used to adapt the return types of the parser to objects that are compatible with the calling system.
 
 If no Generator is provided, then a default generator is used. The default generator created internal objects which all support the `str` function:
- - `quoll.raphael.core/Iri` - an IRI reference. This will print as a QName if it was read that way. Use `as-iri-string` to get the full IRI, even if it can be represented as a QName.
+ - `quoll.raphael.core/IriRef` - an IRI reference. This will print as a QName if it was read that way. Use `as-iri-string` to get the full IRI, even if it can be represented as a QName.
  - `quoll.raphael.core/BlankNode` - A blank node.
  - `quoll.raphael.core/Literal` - A literal containing a string representation of the literal, and either a language code, or a datatype IRI.
 
