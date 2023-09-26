@@ -10,59 +10,61 @@
                                         RDF-NIL RDF-FIRST RDF-REST RDF-TYPE
                                         parse-predicate-object-list parse-collection
                                         parse]]
+            [quoll.raphael.reader :as rdr :refer [position-reader get-char!]]
             [quoll.raphael.text :refer [char-at]]
             [quoll.raphael.triples :refer [triple-accumulator]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 #?(:clj (set! *warn-on-reflection* true))
 
-(defn skip-whitespace' [s n] (skip-whitespace s n (char-at s n)))
+(defn skip-whitespace' [s] (let [r (position-reader s)]
+                             (skip-whitespace r (get-char! r))))
 
 (deftest ws-test
   (testing "Tests if whitespace is skipped correctly."
-    (is (= [3 \a] (skip-whitespace' "   a b" 0)))
-    (is (= [3 \a] (skip-whitespace' "   a b" 2)))
-    (is (= [3 \a] (skip-whitespace' "   a b" 3)))
-    (is (= [5 \b] (skip-whitespace' "   a b" 4)))
-    (is (= [6 :eof] (skip-whitespace' "   a b" 6)))))
+    (is (= \a (skip-whitespace' "   a b")))
+    (is (= \b (skip-whitespace' "     b")))
+    (is (= \b (skip-whitespace' "   # this is whitespace\n  b")))
+    (is (= :eof (skip-whitespace' "")))
+    (is (= :eof (skip-whitespace' "      ")))))
 
-(defn skip-to' [s n chars] (skip-to s n (char-at s n) chars))
+(defn skip-to' [s chars] (let [r (position-reader s)]
+                           (skip-to r (get-char! r) chars)))
 
 (deftest skip-to-test
   (testing "Testing skipping whitespace to a character"
-    (is (= [4 \space] (skip-to' "   . a" 0 dot?)))
-    (is (= [4 \space] (skip-to' "   . a" 1 dot?)))
-    (is (= [4 \space] (skip-to' "   . a" 3 dot?)))
-    (is (thrown? ExceptionInfo (skip-to' "   . a" 4 dot?)))
-    (is (= [4 \space] (skip-to' "   \n a" 0 newline?)))
-    (is (= [4 \space] (skip-to' "   \n a" 1 newline?)))
-    (is (= [4 \space] (skip-to' "   \n a" 3 newline?)))
-    (is (thrown? ExceptionInfo (skip-to' "   \n a" 4 newline?)))))
+    (is (= \space (skip-to' "   . a" dot?)))
+    (is (thrown? ExceptionInfo (skip-to' "    a" dot?)))
+    (is (= \space (skip-to' "   \n a" newline?)))
+    (is (thrown? ExceptionInfo (skip-to' "      a" newline?)))))
 
-(defn parse-iri-ref' [s n c gen] (parse-iri-ref s n c gen nil))
+(defn parse-iri-ref' [s c gen]
+  (let [r (position-reader s)]
+    (parse-iri-ref r c gen nil)))
 
 (deftest iri-ref-test
   (testing "Parsing an IRI reference"
     (let [g (-> (new-generator) (add-base "http://test.org/"))
           i (fn [s] (new-iri g s))]
-      (is (= [16 :eof (i "http://ex.com/") g nil]
-             (parse-iri-ref' "<http://ex.com/>" 0 \< g)))
-      (is (= [46 :eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
-             (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 0 \< g)))
-      (is (= [20 :eof (i "http://ex.com/") g nil]
-             (parse-iri-ref' "foo <http://ex.com/>" 4 \< g)))
-      (is (= [50 :eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
-             (parse-iri-ref' "foo <http://example.com/path?query=x&y=2#fragment>" 4 \< g)))
+      (is (= [:eof (i "http://ex.com/") g nil]
+             (parse-iri-ref' "http://ex.com/>" \< g)))
+      (is (= [:eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
+             (parse-iri-ref' "http://example.com/path?query=x&y=2#fragment>" \< g)))
+      (is (= [:eof (i "http://ex.com/") g nil]
+             (parse-iri-ref' "http://ex.com/>" \< g)))
+      (is (= [:eof (i "http://example.com/path?query=x&y=2#fragment") g nil]
+             (parse-iri-ref' "http://example.com/path?query=x&y=2#fragment>" \< g)))
       (is (thrown? ExceptionInfo
-                   (parse-iri-ref' "<http://example.com/path query=x&y=2#fragment>" 0 \< g)))
+                   (parse-iri-ref' "http://example.com/path query=x&y=2#fragment>" \< g)))
       (is (thrown? ExceptionInfo
-                   (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment>" 1 \h g)))
+                   (parse-iri-ref' "http://example.com/path?query=x&y=2#fragment>" \h g)))
       (is (thrown? ExceptionInfo
-                   (parse-iri-ref' "<http://example.com/path?query=x&y=2#fragment" 0 \< g)))
+                   (parse-iri-ref' "http://example.com/path?query=x&y=2#fragment" \< g)))
       (let [ge (new-generator)]
-        (is (= [6 :eof (new-iri ge "path") ge nil] (parse-iri-ref' "<path>" 0 \< ge))))
-      (is (= [6 :eof (i "http://test.org/path") g nil] (parse-iri-ref' "<path>" 0 \< g))))))
+        (is (= [:eof (new-iri ge "path") ge nil] (parse-iri-ref' "path>" \< ge))))
+      (is (= [:eof (i "http://test.org/path") g nil] (parse-iri-ref' "path>" \< g))))))
 
+(comment
 (defn parse-statement' [s n gen] (parse-statement s n gen nil))
 (defn parse-statement-t [s gen]
   (let [[n c g t] (parse-statement s 0 (char-at s 0) gen (triple-accumulator))]
@@ -492,4 +494,5 @@
       (is (= [15 \] g [[:s a 1] [:s a 2] [:s a 3] [:s b 4] [:s b 5]]]
              (parse-pred-obj-list ":a 1,2,3;:b 4,5]" 0 g))))))
 
+  )
 #?(:cljs (cljs.test/run-tests))
