@@ -1062,7 +1062,7 @@
   c - The last character read.
   gen - the next generator state.
   triples - the triples generated from parsing this line."
-  ([r gen triples] (parse-statement r (char-at r) gen triples))
+  ([r gen triples] (parse-statement r (get-char! r) gen triples))
   ([r c gen triples]
    (let [c (skip-whitespace r c)
          [c' gen' triples'] (case c
