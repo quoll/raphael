@@ -6,16 +6,18 @@
                                         parse-long-string parse-literal parse-lang-tag
                                         anon-blank-node parse-blank-node-entity parse-blank-node
                                         new-lang-string new-literal new-iri
-                                        ->BlankNode ->IriRef new-qname
-                                        RDF-NIL RDF-FIRST RDF-REST RDF-TYPE
+                                        new-qname
                                         parse-predicate-object-list parse-collection
                                         parse]]
             [quoll.raphael.reader :as rdr :refer [position-reader get-char!]]
             [quoll.raphael.text :refer [char-at]]
-            [quoll.raphael.triples :refer [triple-accumulator]])
+            [quoll.raphael.triples :refer [triple-accumulator]]
+            [quoll.rdf :refer [iri unsafe-blank-node RDF-NIL RDF-FIRST RDF-REST RDF-TYPE]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 #?(:clj (set! *warn-on-reflection* true))
+
+(defn blank-node [n] (unsafe-blank-node (str "b" n)))
 
 (defn skip-whitespace' [s] (let [r (position-reader s)]
                              (skip-whitespace r (get-char! r))))
@@ -140,19 +142,19 @@
       (is (= (:namespaces g3) {:base "http://test.org/" "a" "http://a.org/"}))
       (is (= t3 [[(new-qname g3 "a" "a") (new-qname g3 "a" "b") "test"]]))
       (is (= c4 \space))
-      (is (= t4 [[(->BlankNode 0) RDF-FIRST 1]
-                 [(->BlankNode 0) RDF-REST (->BlankNode 1)]
-                 [(->BlankNode 1) RDF-FIRST 2]
-                 [(->BlankNode 1) RDF-REST RDF-NIL]
-                 [(new-qname g3 "a" "a") (new-iri g3 "http://test.org/b") (->BlankNode 0)]]))
+      (is (= t4 [[(blank-node 0) RDF-FIRST 1]
+                 [(blank-node 0) RDF-REST (blank-node 1)]
+                 [(blank-node 1) RDF-FIRST 2]
+                 [(blank-node 1) RDF-REST RDF-NIL]
+                 [(new-qname g3 "a" "a") (new-iri g3 "http://test.org/b") (blank-node 0)]]))
       (is (= c5 \space))
-      (is (= t5 [[(->BlankNode 0) (new-qname g3 "a" "a") 1]
-                 [(->BlankNode 0) (new-qname g3 "a" "b") 2]
-                 [(->BlankNode 0) RDF-TYPE (new-qname g3 "a" "X")]]))
+      (is (= t5 [[(blank-node 0) (new-qname g3 "a" "a") 1]
+                 [(blank-node 0) (new-qname g3 "a" "b") 2]
+                 [(blank-node 0) RDF-TYPE (new-qname g3 "a" "X")]]))
       (is (= c6 \[))
-      (is (= t6 [[(->BlankNode 0) (new-qname g3 "a" "a") 1]
-                 [(->BlankNode 0) (new-qname g3 "a" "b") 2]
-                 [(->BlankNode 0) RDF-TYPE (new-qname g3 "a" "X")]])))))
+      (is (= t6 [[(blank-node 0) (new-qname g3 "a" "a") 1]
+                 [(blank-node 0) (new-qname g3 "a" "b") 2]
+                 [(blank-node 0) RDF-TYPE (new-qname g3 "a" "X")]])))))
 
 (deftest parse-comment-test
   (testing "parsing statements that have comments"
@@ -195,19 +197,19 @@
                 (add-prefix "a-b-c" "http://t1.org/")
                 (add-prefix "a_b" "http://t2.org/")
                 (add-prefix "a.b" "http://t3.org/"))]
-      (is (= [\space (->IriRef "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [\space (iri "http://ex.com/cat" "ex" "cat") g nil]
              (parse-prefixed-name' "ex:cat " g)))
-      (is (= [\. (->IriRef "ex" "cat" "http://ex.com/cat") g nil]
+      (is (= [\. (iri "http://ex.com/cat" "ex" "cat") g nil]
              (parse-prefixed-name' "ex:cat. " g)))
-      (is (= [\space (->IriRef "" "cat" "http://test.org/cat") g nil]
+      (is (= [\space (iri "http://test.org/cat" "" "cat") g nil]
              (parse-prefixed-name' ":cat " g)))
-      (is (= [\. (->IriRef "" "cat" "http://test.org/cat") g nil]
+      (is (= [\. (iri "http://test.org/cat" "" "cat") g nil]
              (parse-prefixed-name' ":cat. " g)))
-      (is (= [\space (->IriRef "a-b-c" "cat" "http://t1.org/cat") g nil]
+      (is (= [\space (iri "http://t1.org/cat" "a-b-c" "cat") g nil]
              (parse-prefixed-name' "a-b-c:cat " g)))
-      (is (= [\space (->IriRef "a_b" "cat" "http://t2.org/cat") g nil]
+      (is (= [\space (iri "http://t2.org/cat" "a_b" "cat") g nil]
              (parse-prefixed-name' "a_b:cat " g)))
-      (is (= [\space (->IriRef "a.b" "cat" "http://t3.org/cat") g nil]
+      (is (= [\space (iri "http://t3.org/cat" "a.b" "cat") g nil]
              (parse-prefixed-name' "a.b:cat " g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' "_b:cat " g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' ".b:cat " g)))
@@ -325,7 +327,7 @@
       (is (= [:eof (new-literal g "hello world" (new-iri g "http://xsd.org/string")) g nil]
              (parse-literal' "\"hello world\"^^<http://xsd.org/string>" g)))
       (is (= [:eof (new-literal g "hello world"
-                                   (->IriRef "xsd" "string" "http://xsd.org/string"))
+                                   (iri "http://xsd.org/string" "xsd" "string"))
               g nil]
              (parse-literal' "\"hello world\"^^xsd:string" g))))))
 
@@ -340,9 +342,9 @@
           [c1 b1 g1] (parse-anon "]" g)
           [c2 b2 g2] (parse-anon "] ." g1)]
       (is (= :eof c1))
-      (is (= (->BlankNode 0) b1))
+      (is (= (blank-node 0) b1))
       (is (= \space c2))
-      (is (= (->BlankNode 1) b2)))))
+      (is (= (blank-node 1) b2)))))
 
 (defn parse-entity
   [s g]
@@ -357,10 +359,10 @@
           [c1 b1 g1 t1] (parse-entity "[:a 1; :b 2]" g)
           [c2 b2 g2 t2] (parse-entity "[:a 1, \"one\"; :b 2]." g1)]
       (is (= c1 :eof))
-      (is (= b1 (->BlankNode 0)))
+      (is (= b1 (blank-node 0)))
       (is (= t1 [[b1 a 1] [b1 b 2]]))
       (is (= c2 \.))
-      (is (= b2 (->BlankNode 1)))
+      (is (= b2 (blank-node 1)))
       (is (= t2 [[b2 a 1] [b2 a "one"] [b2 b 2]])))))
 
 (defn parse-blank
@@ -377,15 +379,15 @@
           [c4 b4 g4] (parse-blank "_:b1 " g3)
           [c5 b5 g5] (parse-blank "_:b1.1d]" g4)]
       (is (= c1 :eof))
-      (is (= b1 (->BlankNode 0)))
+      (is (= b1 (blank-node 0)))
       (is (= c2 \,))
-      (is (= b2 (->BlankNode 1)))
+      (is (= b2 (blank-node 1)))
       (is (= c3 \space))
-      (is (= b3 (->BlankNode 2)))
+      (is (= b3 (blank-node 2)))
       (is (= c4 \space))
-      (is (= b4 (->BlankNode 0)))
+      (is (= b4 (blank-node 0)))
       (is (= c5 \]))
-      (is (= b5 (->BlankNode 3))))))
+      (is (= b5 (blank-node 3))))))
 
 (defn parse-collection'
   [s g]
@@ -399,42 +401,42 @@
           b (new-qname g "" "b")
           [c0 b0 g0 t0] (parse-collection' "()" g)
           [c1 b1 g1 t1] (parse-collection' "( 1 2)" g0)
-          b12 (->BlankNode 1)
+          b12 (blank-node 1)
           [c2 b2 g2 t2] (parse-collection' "(:a 1 :b 2 )" g1)
-                                        ;b2 (->BlankNode 2)
-          b22 (->BlankNode 3)
-          b23 (->BlankNode 4)
-          b24 (->BlankNode 5)
+                                        ;b2 (blank-node 2)
+          b22 (blank-node 3)
+          b23 (blank-node 4)
+          b24 (blank-node 5)
           [c3 b3 g3 t3] (parse-collection' "(:a 1 \"one\" [] :b 2)." g2)
-                                        ;b3 (->BlankNode 6)
-          b32 (->BlankNode 7)
-          b33 (->BlankNode 8)
-          b34 (->BlankNode 9)
-          b34a (->BlankNode 10)
-          b35 (->BlankNode 11)
-          b36 (->BlankNode 12)
+                                        ;b3 (blank-node 6)
+          b32 (blank-node 7)
+          b33 (blank-node 8)
+          b34 (blank-node 9)
+          b34a (blank-node 10)
+          b35 (blank-node 11)
+          b36 (blank-node 12)
           [c4 b4 g4 t4] (parse-collection' "([:a 1; :b 2] [:a 2])." g3)
-                                        ;b4 (->BlankNode 13)
-          b41a (->BlankNode 14)
-          b42 (->BlankNode 15)
-          b42a (->BlankNode 16)]
+                                        ;b4 (blank-node 13)
+          b41a (blank-node 14)
+          b42 (blank-node 15)
+          b42a (blank-node 16)]
       (is (= c0 :eof))
       (is (= b0 RDF-NIL))
       (is (empty? t0))
       (is (= c1 :eof))
-      (is (= b1 (->BlankNode 0)))
+      (is (= b1 (blank-node 0)))
       (is (= t1 [[b1 RDF-FIRST 1] [b1 RDF-REST b12] [b12 RDF-FIRST 2] [b12 RDF-REST RDF-NIL]]))
       (is (= c2 :eof))
-      (is (= b2 (->BlankNode 2)))
+      (is (= b2 (blank-node 2)))
       (is (= t2 [[b2 RDF-FIRST a] [b2 RDF-REST b22] [b22 RDF-FIRST 1] [b22 RDF-REST b23]
                  [b23 RDF-FIRST b] [b23 RDF-REST b24] [b24 RDF-FIRST 2] [b24 RDF-REST RDF-NIL]]))
       (is (= c3 \.))
-      (is (= b3 (->BlankNode 6)))
+      (is (= b3 (blank-node 6)))
       (is (= t3 [[b3 RDF-FIRST a] [b3 RDF-REST b32] [b32 RDF-FIRST 1] [b32 RDF-REST b33]
                  [b33 RDF-FIRST "one"] [b33 RDF-REST b34] [b34 RDF-FIRST b34a] [b34 RDF-REST b35]
                  [b35 RDF-FIRST b] [b35 RDF-REST b36] [b36 RDF-FIRST 2] [b36 RDF-REST RDF-NIL]]))
       (is (= c4 \.))
-      (is (= b4 (->BlankNode 13)))
+      (is (= b4 (blank-node 13)))
       (is (= t4 [[b41a a 1] [b41a b 2] [b4 RDF-FIRST b41a] [b4 RDF-REST b42] [b42a a 2]
                  [b42 RDF-FIRST b42a] [b42 RDF-REST RDF-NIL]])))))
 

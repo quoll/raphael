@@ -2,6 +2,7 @@
   "A namespace for manually parsing Turtle. Entry point is parse-doc."
   {:author "Paula Gearon"}
   (:require [clojure.string :as str]
+            [quoll.rdf :as rdf :refer [RDF-TYPE RDF-FIRST RDF-REST RDF-NIL]]
             [quoll.raphael.m :refer [throw-unex] :include-macros true]
             [quoll.raphael.text :as text :refer [char-at]]
             [quoll.raphael.reader :as rdr :refer [get-char! position]]
@@ -9,7 +10,6 @@
             [tiara.data :refer [EMPTY_MAP]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
-(def RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#")
 
 (def ^:dynamic *loc* (volatile! [1 0]))
 
@@ -18,9 +18,6 @@
 (defn update-pos!
   [r]
   (vswap! *loc* (fn [loc] [(inc (nth loc 0)) (position r)])))
-
-(defprotocol IRI
-  (as-iri-string [iri generator] "Returns this object as an iri string."))
 
 (defprotocol NodeGenerator
   (new-node [generator] [generator label]
@@ -48,75 +45,22 @@
   (rdf-rest [generator] "Returns the rdf:rest qname")
   (rdf-nil [generator] "Returns the rdf:nil qname"))
 
-(defrecord BlankNode [n]
-  Object
-  (toString [this] (str "_:b" n)))
-
-(defrecord IriRef [prefix local iri]
-  IRI
-  (as-iri-string [this generator] (or iri (str (iri-for generator prefix) local)))
-  Object
-  (toString [this] (if prefix
-                     (str prefix ":" local)
-                     (str "<" iri ">"))))
-
-(extend-protocol IRI
-  #?(:clj String :cljs string)
-  (as-iri-string [this generator] this))
-
-(def RDF-TYPE (->IriRef "rdf" "type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
-(def RDF-FIRST (->IriRef "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
-(def RDF-REST (->IriRef "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
-(def RDF-NIL (->IriRef "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
-
-(defn iri-string
-  "Converts an IRI to a string form for printing"
-  [iri-ref]
-  (if (string? iri-ref)
-    (str \< iri-ref \>)
-    (str iri-ref)))
-
-(def echar-map {\newline "\\n"
-                \return "\\r"
-                \tab "\\t"
-                \formfeed "\\f"
-                \backspace "\\b"
-                \" "\\\""
-                \\ "\\\\"})
-
-(defn print-escape
-  "Escapes a string for printing"
-  [s]
-  (str \"
-       (-> s
-           (str/replace #"[\n\r\t\f\"\\]" #(echar-map (char-at % 0)))
-           (str/replace "\b" "\\b"))
-       \"))
-
-(defrecord Literal [value lang type]
-  Object
-  (toString [this]
-    (cond
-      lang (str (print-escape value) "@" lang)
-      type (str (print-escape value) "^^" (iri-string type))
-      :default (print-escape value))))
-
 (defrecord Generator [counter bnode-cache namespaces]
   NodeGenerator
   (new-node [this]
-    [(update this :counter inc) (->BlankNode counter)])
+    [(update this :counter inc) (rdf/unsafe-blank-node (str "b" counter))])
   (new-node [this label]
     (if-let [node (get bnode-cache label)]
       [this node]
-      (let [node (->BlankNode counter)]
+      (let [node (rdf/unsafe-blank-node (str "b" counter))]
         [(-> this
              (update :counter inc)
              (update :bnode-cache assoc label node))
          node])))
   (add-base [this iri]
-    (update this :namespaces assoc :base (as-iri-string iri this)))
+    (update this :namespaces assoc :base (rdf/as-str iri)))
   (add-prefix [this prefix iri]
-    (update this :namespaces assoc prefix (as-iri-string iri this)))
+    (update this :namespaces assoc prefix (rdf/as-str iri)))
   (iri-for [this prefix]
     (get namespaces prefix))
   (get-namespaces [this]
@@ -124,15 +68,15 @@
   (get-base [this]
     (:base namespaces))
   (new-qname [this prefix local]
-    (->IriRef prefix local (str (get namespaces prefix) local)))
+    (rdf/iri (str (get namespaces prefix) local) prefix local))
   (new-iri [this iri]
-    (->IriRef nil nil iri))
+    (rdf/iri iri))
   (new-literal [this s]
-    (->Literal s nil nil))
+    (rdf/typed-literal s rdf/XSD-STRING))
   (new-literal [this s t]
-    (->Literal s nil t))
+    (rdf/typed-literal s t))
   (new-lang-string [this s lang]
-    (->Literal s lang nil))
+    (rdf/lang-literal s lang))
   (rdf-type [this] RDF-TYPE)
   (rdf-first [this] RDF-FIRST)
   (rdf-rest [this] RDF-REST)
@@ -408,7 +352,7 @@
   triples - the current triples.
   return: [c prefix]
   c - The character immediately after the prefixed name.
-  qname - The prefixed name as a IriRef
+  qname - The prefixed name as a IRI
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   ([r c gen triples]
@@ -442,7 +386,7 @@
   triples - the current triples.
   return: [c iri]
   c - the character after the iri.
-  iri - the node for the parsed iri. Either an IRI string or an IriRef.
+  iri - the node for the parsed iri. Either an IRI string or an IRI.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   [r c gen triples]
