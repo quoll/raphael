@@ -52,7 +52,7 @@
   Object
   (toString [this] (str "_:b" n)))
 
-(defrecord Iri [prefix local iri]
+(defrecord IriRef [prefix local iri]
   IRI
   (as-iri-string [this generator] (or iri (str (iri-for generator prefix) local)))
   Object
@@ -64,10 +64,10 @@
   #?(:clj String :cljs string)
   (as-iri-string [this generator] this))
 
-(def RDF-TYPE (->Iri "rdf" "type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
-(def RDF-FIRST (->Iri "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
-(def RDF-REST (->Iri "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
-(def RDF-NIL (->Iri "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
+(def RDF-TYPE (->IriRef "rdf" "type" "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+(def RDF-FIRST (->IriRef "rdf" "first" "http://www.w3.org/1999/02/22-rdf-syntax-ns#first"))
+(def RDF-REST (->IriRef "rdf" "rest" "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"))
+(def RDF-NIL (->IriRef "rdf" "nil" "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
 
 (defn iri-string
   "Converts an IRI to a string form for printing"
@@ -124,9 +124,9 @@
   (get-base [this]
     (:base namespaces))
   (new-qname [this prefix local]
-    (->Iri prefix local (str (get namespaces prefix) local)))
+    (->IriRef prefix local (str (get namespaces prefix) local)))
   (new-iri [this iri]
-    (->Iri nil nil iri))
+    (->IriRef nil nil iri))
   (new-literal [this s]
     (->Literal s nil nil))
   (new-literal [this s t]
@@ -408,7 +408,7 @@
   triples - the current triples.
   return: [c prefix]
   c - The character immediately after the prefixed name.
-  qname - The prefixed name as a Iri.
+  qname - The prefixed name as a IriRef
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   ([r c gen triples]
@@ -442,7 +442,7 @@
   triples - the current triples.
   return: [c iri]
   c - the character after the iri.
-  iri - the node for the parsed iri. Either an IRI string or an Iri.
+  iri - the node for the parsed iri. Either an IRI string or an IriRef.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
   [r c gen triples]

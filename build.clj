@@ -3,10 +3,9 @@
   (:require [clojure.tools.build.api :as b] ; for b/git-count-revs
             [org.corfield.build :as bb]))
 
+(def pom "build-rsc/pom.xml")
 (def lib 'org.clojars.quoll/raphael)
-(def version "0.1.6")
-;; alternatively, use MAJOR.MINOR.COMMITS:
-#_(def version (format "1.0.%s" (b/git-count-revs nil)))
+(def version "0.3.0")
 
 ;; clojure -T:build test
 (defn test "Run the tests." [opts]
@@ -15,7 +14,7 @@
 ;; clojure -T:build ci
 (defn ci "Run the CI pipeline of tests (and build the JAR)." [opts]
   (-> opts
-      (assoc :lib lib :version version)
+      (assoc :lib lib :version version :src-pom pom)
       (bb/run-tests)
       (bb/clean)
       (bb/jar)))

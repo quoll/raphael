@@ -1,7 +1,7 @@
 (ns quoll.raphael.doc-test
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.string :as str]
-            [quoll.raphael.core :refer [parse ->Iri IRI]])
+            [quoll.raphael.core :refer [parse IRI]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (def document1
