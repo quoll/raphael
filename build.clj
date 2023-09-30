@@ -5,7 +5,7 @@
 
 (def pom "build-rsc/pom.xml")
 (def lib 'org.clojars.quoll/raphael)
-(def version "0.2.0")
+(def version "0.3.0")
 
 ;; clojure -T:build test
 (defn test "Run the tests." [opts]

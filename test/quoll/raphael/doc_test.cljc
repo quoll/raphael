@@ -1,8 +1,11 @@
 (ns quoll.raphael.doc-test
   (:require [clojure.test :refer [deftest testing is]]
             [clojure.string :as str]
-            [quoll.raphael.core :refer [parse IRI]])
-  #?(:clj (:import [clojure.lang ExceptionInfo])))
+            [quoll.raphael.core :refer [parse]]
+            #?(:clj [quoll.rdf :as rdf]
+               :cljs [quoll.rdf :as rdf :refer [IRI]]))
+  #?(:clj (:import [clojure.lang ExceptionInfo]
+                   [quoll.rdf IRI])))
 
 (def document1
 "@base <http://example.org/> .
@@ -172,9 +175,12 @@ The second line
 (defn simple
   [e]
   (cond
-    (satisfies? IRI e) (if-let [p (:prefix e)]
-                         (if (empty? p) (keyword (:local e)) (keyword p (:local e)))
-                         (str e))
+    (instance? IRI e) (if-let [local (:local e)]
+                        (let [p (:prefix e)]
+                          (if (and p (seq (name p)))
+                            (keyword (name p) (:local e))
+                            (keyword (:local e))) )
+                        (str e))
     (number? e) e
     (boolean? e) e
     :default (str e)))
@@ -227,14 +233,18 @@ The second line
   (testing "Parsing of example11 document"
     (let [ex "http://one.example/"
           {:keys [base namespaces triples]} (parse document11)
-          show218 (keyword "show" "218")]
+          show218 (keyword "show" "218")
+          tstrings (take 3 (map #(nth % 2) triples))]
       (is (nil? base))
       (is (= namespaces {"rdfs" "http://www.w3.org/2000/01/rdf-schema#"
                          "show" "http://example.org/vocab/show/"
                          "xsd" "http://www.w3.org/2001/XMLSchema#"}))
+      (= [(rdf/iri "<http://www.w3.org/2001/XMLSchema#string>")
+          (rdf/iri "<http://www.w3.org/2001/XMLSchema#string>" "xsd" "string")
+          nil] (map :datatype tstrings))
       (is (= (simplify triples)
-             [[show218 :rdfs/label "\"That Seventies Show\"^^xsd:string"]
-              [show218 :rdfs/label "\"That Seventies Show\"^^<http://www.w3.org/2001/XMLSchema#string>"]
+             [[show218 :rdfs/label "\"That Seventies Show\""]
+              [show218 :rdfs/label "\"That Seventies Show\""]
               [show218 :rdfs/label "That Seventies Show"]
               [show218 :show/localName "\"That Seventies Show\"@en"]
               [show218 :show/localName "\"Cette Série des Années Soixante-dix\"@fr"]

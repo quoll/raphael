@@ -1,6 +1,6 @@
-(ns ^{:doc "Text functions, for building and parsing strings"
-      :author "Paula Gearon"}
-    quoll.raphael.text
+(ns quoll.raphael.text
+  "Text functions, for building and parsing strings"
+  {:author "Paula Gearon"}
   #?(:cljs (:import [goog.string StringBuffer])))
 
 #?(:clj
@@ -83,6 +83,19 @@
      or :eof at the end of the string."
      [s n]
      (if (< n (.-length s)) (.charAt s n) :eof)))
+
+(defn buffer-empty?
+  "Returns true when the buffer has no data"
+  [b]
+  #?(:clj (zero? (.length ^StringBuilder b))
+     :cljs (zero? (.getLength b))))
+
+(defn lower-case-char
+  "Converts a single character to lower-case.
+   Characters in ClojureScript are single-element strings."
+  [c]
+  #?(:clj (Character/toLowerCase ^char c)
+     :cljs (str/lower-case c)))
 
 (defn parse-hex
   "Parses a hexadecimal string into a long"
