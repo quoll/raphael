@@ -87,14 +87,14 @@
 (defn buffer-empty?
   "Returns true when the buffer has no data"
   [b]
-  #?(:clj (zero? (.length b))
+  #?(:clj (zero? (.length ^StringBuilder b))
      :cljs (zero? (.getLength b))))
 
 (defn lower-case-char
   "Converts a single character to lower-case.
    Characters in ClojureScript are single-element strings."
   [c]
-  #?(:clj (Character/toLowerCase c)
+  #?(:clj (Character/toLowerCase ^char c)
      :cljs (str/lower-case c)))
 
 (defn parse-hex
