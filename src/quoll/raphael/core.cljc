@@ -1105,10 +1105,10 @@
    (let [triples (triples/triple-accumulator)
          reader (rdr/position-reader in)
          [gen triples] (binding [*loc* (volatile! [1 0])]
-                           (loop [[c gen triples] (parse-statement in generator triples)]
+                           (loop [[c gen triples] (parse-statement reader generator triples)]
                              (if (= :eof c)
                                [gen triples]
-                               (recur (parse-statement in c gen triples)))))
+                               (recur (parse-statement reader c gen triples)))))
          result {:namespaces (get-namespaces gen)
                  :triples (seq triples)}
          base (get-base gen)]
