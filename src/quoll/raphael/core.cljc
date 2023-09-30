@@ -256,37 +256,38 @@
 (defn parse-prefix
   "Parse a prefix. This is a simple string terminated with a ':'. The : character is not part of the prefix.
   s - The reader to parse from.
-  c - The character at offset n.
+  c - The last character read.
   return: [c prefix]
   c - The character immediately after the prefix.
   prefix - The prefix string."
   [r c]
-  (let [sb (text/string-builder)
-        c (get-char! r)]
-    (cond
-      (pn-chars-base? c) (text/append! sb c)
-      
-      (text/high-surrogate? c) (let [c2 (get-char! r)]
-                                 (when-not (text/low-surrogate? c2)
-                                   (throw-unex *loc* "Bad Unicode characters at start of prefix: " r (str [c c2])))
-                                 (text/append! sb c)
-                                 (text/append! sb c2))
-      :default (throw-unex *loc* "Unexpected character at start of prefix: " r (str c)))
-    (loop [c (get-char! r)]
+  (if (= \: c)
+    [(get-char! r) ""]
+    (let [sb (text/string-builder)]
       (cond
-        (= \: c) (if (= \. (text/last-char sb))
-                   (throw-unex *loc* "Unexpected '.' at end of prefix: " r (str sb))
-                   [(get-char! r) (str sb)])
-        (pn-chars? c) (do
-                        (text/append! sb c)
-                        (recur (get-char! r)))
+        (pn-chars-base? c) (text/append! sb c)
+        
         (text/high-surrogate? c) (let [c2 (get-char! r)]
                                    (when-not (text/low-surrogate? c2)
-                                     (throw-unex *loc* (str "Bad Unicode characters " [c c2] " in prefix: ") r (str sb)))
+                                     (throw-unex *loc* "Bad Unicode characters at start of prefix: " r (str [c c2])))
                                    (text/append! sb c)
-                                   (text/append! sb c2)
-                                   (recur (get-char! r)))
-        :default (throw-unex *loc* (str "Unexpected character '" c "' (" (text/char-code c) ") in prefix: ") r (str sb))))))
+                                   (text/append! sb c2))
+        :default (throw-unex *loc* "Unexpected character at start of prefix: " r (str \' c \')))
+      (loop [c (get-char! r)]
+        (cond
+          (= \: c) (if (= \. (text/last-char sb))
+                     (throw-unex *loc* "Unexpected '.' at end of prefix: " r (str sb))
+                     [(get-char! r) (str sb)])
+          (pn-chars? c) (do
+                          (text/append! sb c)
+                          (recur (get-char! r)))
+          (text/high-surrogate? c) (let [c2 (get-char! r)]
+                                     (when-not (text/low-surrogate? c2)
+                                       (throw-unex *loc* (str "Bad Unicode characters " [c c2] " in prefix: ") r (str sb)))
+                                     (text/append! sb c)
+                                     (text/append! sb c2)
+                                     (recur (get-char! r)))
+          :default (throw-unex *loc* (str "Unexpected character '" c "' (" (text/char-code c) ") in prefix: ") r (str sb)))))))
 
 (defn parse-u-char
   "Parse a an unescapped code of uxxxx or Uxxxxxxxx. A preceding \\ character was just parsed.
@@ -482,7 +483,7 @@
   value - the parsed string."
   [r c end-q]
   (let [sb (text/string-builder)]
-    (loop [esc false current (get-char! r)]
+    (loop [esc false current c]
       (cond
         (= end-q current)
         (if esc
@@ -614,7 +615,7 @@
               (if group-start?
                 (throw-unex *loc* "Bad language tag on literal: " r (str sb))
                 (do (text/append! sb c')
-                    (recur (get-char! r) false)))
+                    (recur (get-char! r) true)))
               
               :default
               (if group-start?
@@ -633,14 +634,14 @@
   value - the parsed value, in string form if it is plain.
   gen - the updated generator.
   triples - the triples generated in parsing the node."
-  [r c gen triples]
+  [r quote-c gen triples]
   (let [c' (get-char! r)
-        [c lit-str] (if (= c' c)
+        [c lit-str] (if (= c' quote-c)
                       (let [c2 (get-char! r)]
-                        (if (= c2 c)
-                          (parse-long-string r (get-char! r) c)
+                        (if (= c2 quote-c)
+                          (parse-long-string r (get-char! r) quote-c)
                           [c2 ""]))
-                      (parse-string r c' c))]
+                      (parse-string r c' quote-c))]
     (case c
       \^ (let [tc (get-char! r)]
            (if (= \^ tc)
@@ -802,11 +803,11 @@
   gen - the updated generator
   triples - the updated triples sequence."
   [r c subject gen triples]
-  (loop [[r pred gen triples :as all] (maybe-parse-predicate r c gen triples)]
+  (loop [[c pred gen triples] (maybe-parse-predicate r c gen triples)]
     (if-not pred
-      [r gen triples]
+      [c gen triples]
       (let [c (skip-whitespace r c)
-            [r gen triples] (loop [[c obj gen triples] (parse-object r c gen triples)]
+            [c gen triples] (loop [[c obj gen triples] (parse-object r c gen triples)]
                               (let [c (skip-whitespace r c)
                                     triples (triples/append! triples subject pred obj)]
                                 (case c
@@ -817,7 +818,7 @@
                                                                (catch ExceptionInfo e nil))]
                                          (recur parse-result)
                                          [c gen triples]))
-                                  (throw-unex *loc* "Unexpected separator in predicate-object list: '" r (str c "' " (last triples))))))]
+                                  (throw-unex *loc* "Unexpected separator in predicate-object list: '" r (str c "' " (last (seq triples)))))))]
         (if (= c \;)
           (let [c (skip-whitespace r (get-char! r))]
             (recur (maybe-parse-predicate r c gen triples)))
@@ -826,12 +827,12 @@
 (defn anon-blank-node
   "Generates a new blank node with no properties. Already passed the opening [ character, and whitespace.
   This function just steps to the next position.
-  r - The reader to parse from. Not read by this function.
+  r - The reader to parse from.
   c - The last character read. This must be a ]
   g - The generator.
   triples - An accumulating transient of triples.
   return: [r node gen triples more?]
-  c - the character just read
+  c - the character immediately after the node
   node - the new anonymous blank node
   gen - the updated generator
   triples - the updated triples sequence
@@ -858,7 +859,7 @@
         c (skip-whitespace r c)]
     (if (= c \])
       [(get-char! r) node gen triples true]
-      (throw-unex *loc* "Structured blank node entity improperly terminated with '" r (str c "' " (last triples))))))
+      (throw-unex *loc* "Structured blank node entity improperly terminated with '" r (str c "' " (last (seq triples)))))))
 
 (defn parse-subject
   "Parse a subject entity, including any triples.
@@ -958,7 +959,7 @@
             c (skip-whitespace r c)
             [c gen triples] (parse-predicate-object-list r c subject gen triples)]
         (when-not (= \. c)
-          (throw-unex *loc* "Statements invalidly terminated: " r (str (last triples) c)))
+          (throw-unex *loc* "Statements invalidly terminated: " r (str (last (seq triples)) \' c \')))
         (when (and (not enf?) (= initial-count (count triples)))
           (throw-unex *loc* "Subjects require predicates and objects: " r c))
         [(get-char! r) gen triples]))))
@@ -983,48 +984,55 @@
             c (skip-whitespace r c)
             [c gen triples] (parse-predicate-object-list r c subject gen triples)]
         (when-not (= \. c)
-          (throw-unex *loc* "Statements invalidly terminated: " r (str (last triples) c)))
+          (throw-unex *loc* "Statements invalidly terminated: " r (str (last (seq triples)) c)))
         (when (and (not enf?) (= initial-count (count triples)))
           (throw-unex *loc* "Subjects require predicates and objects: " r c))
         [(get-char! r) gen triples]))))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline for a PREFIX or BASE directive.
-  NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
+  NOTE: THE FIRST ARITY OF THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   r - The reader to parse from.
+  c - [optional] The incoming character.
   gen - The generator to update.
   end-char - A test for the final character
   return: [c gen]
   c - character at position n
   gen - the new generator."
-  [r gen end-char]
-  (let [c (get-char! r)]
-    (if (whitespace? c)
-      (let [c (skip-whitespace r c)
-            [c prefix] (parse-prefix r c)
-            c (skip-whitespace r c)
-            [c iri] (parse-iri-ref r c gen nil)
-            c (skip-to r c end-char)]
-        [c (add-prefix gen prefix iri)])
-      (throw-unex *loc* "Unknown statement: " r c))))
+  ([r gen end-char]
+   (let [c (get-char! r)]
+     (if (whitespace? c)
+       (parse-prefix-iri-end r c gen end-char)
+       (throw-unex *loc* "Unknown statement: " r (str \' c \')))))
+  ([r c gen end-char]
+   (let [c (skip-whitespace r c)
+         [c prefix] (parse-prefix r c)
+         c (skip-whitespace r c)
+         [c iri] (parse-iri-ref r c gen nil)
+         c (skip-to r c end-char)]
+     [c (add-prefix gen prefix iri)])))
 
 (defn parse-base-end
   "Parse an iri and the end-char for the end of the line.
-  NOTE: THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
+  NOTE: THE FIRST ARITY OF THIS FUNCTION DOES NOT USE AN INCOMING CHARACTER
   r - The reader to parse from.
+  c - [optional] The incoming character.
   gen - The generator to update.
   end-char - A test for the final character
   return: [c gen]
   c - character at position n
   gen - the new generator."
-  [r gen end-char]
-  (let [c (get-char! r)]
-    (if (whitespace? c)
-      (let [c (skip-whitespace r c)
-            ;; nil triples, since triples are not being generated during a directive
-            [c iri] (parse-iri-ref r c gen nil)]
-        [c (add-base gen iri)])
-      (throw-unex *loc* "Unknown statement: " r (str c)))))
+  ([r gen end-char]
+   (let [c (get-char! r)]
+     (if (whitespace? c)
+       (parse-base-end r c gen end-char)
+       (throw-unex *loc* "Unknown statement: " r (str \' c \')))))
+  ([r c gen end-char]
+   (let [c (skip-whitespace r c)
+         ;; nil triples, since triples are not being generated during a directive
+         [c iri] (parse-iri-ref r c gen nil)
+         c (skip-to r c end-char)]
+     [c (add-base gen iri)])))
 
 (defn parse-ambiguous-line
   "Reads a line up to the point where ambiguity can be resolved.
@@ -1035,7 +1043,7 @@
   triples - The current triples.
   common-text - The text that can start either type of line.
   non-triples-op - The function to use to parse the line if it does not contain triples.
-                   This function accepts the string and offset into the string
+                   This function accepts the incoming char.
   return: [c gen triples]
   c - The last character read.
   gen - the next generator state.
@@ -1049,7 +1057,7 @@
           (text/append! text cp)
           (recur (inc a) (get-char! r)))
         (if (whitespace? cp) ;; should only occur when the common length was reached
-          (non-triples-op)
+          (non-triples-op cp)
           (pre-parse-triples r cp gen triples text))))))
 
 (defn parse-statement
@@ -1074,9 +1082,9 @@
                                          (parse-prefix-iri-end r gen dot?)
                                          (throw-unex *loc* "Unknown statement: " r text2)))))
                               (\B \b) (parse-ambiguous-line r c gen triples "base"
-                                                            #(parse-base-end r gen newline?))
+                                                            #(parse-base-end r % gen newline?))
                               (\P \p) (parse-ambiguous-line r c gen triples "prefix"
-                                                            #(parse-prefix-iri-end r gen newline?))
+                                                            #(parse-prefix-iri-end r % gen newline?))
                               :eof [c gen triples]
                               nil)]
      (if c'
