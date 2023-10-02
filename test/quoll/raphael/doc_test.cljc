@@ -239,8 +239,8 @@ The second line
       (is (= namespaces {"rdfs" "http://www.w3.org/2000/01/rdf-schema#"
                          "show" "http://example.org/vocab/show/"
                          "xsd" "http://www.w3.org/2001/XMLSchema#"}))
-      (= [(rdf/iri "<http://www.w3.org/2001/XMLSchema#string>")
-          (rdf/iri "<http://www.w3.org/2001/XMLSchema#string>" "xsd" "string")
+      (= [(rdf/iri "http://www.w3.org/2001/XMLSchema#string")
+          (rdf/iri "http://www.w3.org/2001/XMLSchema#string" "xsd" "string")
           nil] (map :datatype tstrings))
       (is (= (simplify triples)
              [[show218 :rdfs/label "\"That Seventies Show\""]
