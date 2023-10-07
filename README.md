@@ -1,6 +1,6 @@
 # quoll/raphael
 
-A Clojure library for parsing strings containing the [Terse Triples Language: Turtle](https://www.w3.org/TR/turtle/).
+A Clojure/ClojureScript library for parsing strings containing the [Terse Triples Language: Turtle](https://www.w3.org/TR/turtle/).
 
 This parser is in pure Clojure for portability.
 It also avoids parser tools, in an effort to parse large documents quickly.
@@ -9,19 +9,20 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Leiningen/Boot
 ```clojure
-[org.clojars.quoll/raphael "0.2.0"]
+[org.clojars.quoll/raphael "0.3.1"]
 ```
 
 ### Clojure CLI/deps.edn
 ```clojure
-org.clojars.quoll/raphael {:mvn/version "0.2.0"}
+org.clojars.quoll/raphael {:mvn/version "0.3.1"}
 ```
 
-After bringing in the project, just use the `parse` function on a string.
+After bringing in the project, just use the `parse` function on a string or a Java reader.
 ```clojure
 (:require '[quoll.raphael.core :refer [parse]])
 
 (parse (slurp "data.ttl"))
+(parse (clojure.java.io/reader "data.ttl"))  ;; Clojure only
 ```
 
 This returns an in-memory structure with 3 fields:

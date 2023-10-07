@@ -10,6 +10,12 @@
             [tiara.data :refer [EMPTY_MAP]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
+#?(:clj
+   (defmacro int-code [x] `(int ~x))
+   :cljs
+   (defn int-code [x] (.charCodeAt x 0)))
+
+(def ^:const MAXLINE 80)
 
 (def ^:dynamic *loc* (volatile! [1 0]))
 
@@ -526,10 +532,10 @@
         nc (loop [c' c]
              (if (= :eof c')
                c'
-               (let [cn (int c')]
+               (let [cn (int-code c')]
                  (cond
-                   (and (<= cn (int \z)) (>= cn (int \A))
-                        (or (>= cn (int \a)) (<= cn (int \Z))))
+                   (and (<= cn (int-code \z)) (>= cn (int-code \A))
+                        (or (>= cn (int-code \a)) (<= cn (int-code \Z))))
                    (do (text/append! sb c')
                        (recur (get-char! r)))
 
@@ -546,12 +552,12 @@
       (loop [c' (get-char! r) group-start? true]
         (if (= :eof c')
           [c' (new-lang-string gen lit-str (str sb)) gen triples]
-          (let [cn (int c')]
+          (let [cn (int-code c')]
             (cond
-              (and (<= cn (int \z)) (>= cn (int \0))
-                   (or (>= cn (int \a))
-                       (and (<= cn (int \Z)) (>= cn (int \A)))
-                       (<= cn (int \9))))
+              (and (<= cn (int-code \z)) (>= cn (int-code \0))
+                   (or (>= cn (int-code \a))
+                       (and (<= cn (int-code \Z)) (>= cn (int-code \A)))
+                       (<= cn (int-code \9))))
               (do (text/append! sb c')
                   (recur (get-char! r) false))
 
@@ -701,10 +707,10 @@
   triples - the current triples."
   [r c gen triples]
   (when-not (= \: (get-char! r))
-    (throw-unex *loc* "Illegal underscore (_) at start of symbol." r (str \_ (rdr/readn-line! r))))
+    (throw-unex *loc* "Illegal underscore (_) at start of symbol." r (str \_ (rdr/readn-line! r MAXLINE))))
   (let [c (get-char! r)
         _ (when-not (pn-chars-ud? c)
-            (throw-unex *loc* "Illegal character at start of blank node label: '" r (str c (rdr/readn-line! r) "'")))
+            (throw-unex *loc* "Illegal character at start of blank node label: '" r (str c (rdr/readn-line! r MAXLINE) "'")))
         sb (text/string-builder)
         _ (text/append! sb c)
         [c label] (loop [c (get-char! r) dot false]

@@ -1,6 +1,7 @@
 (ns quoll.raphael.text
   "Text functions, for building and parsing strings"
   {:author "Paula Gearon"}
+  #?(:cljs (:require [clojure.string :as str]))
   #?(:cljs (:import [goog.string StringBuffer])))
 
 #?(:clj
