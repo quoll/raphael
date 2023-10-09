@@ -1,6 +1,6 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
-        org.clojars.quoll/tiara {:mvn/version "0.3.2"}
+        org.clojars.quoll/tiara {:mvn/version "0.3.3"}
         org.clojars.quoll/rudolf {:mvn/version "0.1.4"}}
  :aliases
  {:test
