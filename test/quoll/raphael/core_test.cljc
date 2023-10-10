@@ -82,7 +82,8 @@
           [c5 g5 t5] (parse-statement' "@prefix t\ud800\udd49: <http://atticten.com/>. \n" g4)
           [c6 g6 t6] (parse-statement' "@prefix \ud800\udd49x: <http://atticten.com/pre>. \n" g5)
           [c7 g7 t7] (parse-statement' "@prefix \udb7f\udfffx: <http://unicode.com/limit>. \n" g6)
-          [c8 g8 t8] (parse-statement' "@prefix : <http://short.com/>. \n" g7)]
+          [c8 g8 t8] (parse-statement' "@prefix : <http://short.com/>. \n" g7)
+          [c9 g9 t9] (parse-statement' "PREFIX test: <http://test.org#>\n" g2)]
       (is (= :eof c1))
       (is (= {:base "http://test.org/"} (:namespaces g1)))
       (is (nil? t1))
@@ -118,6 +119,9 @@
               "\udb7f\udfffx" "http://unicode.com/limit" "" "http://short.com/"}
              (:namespaces g8)))
       (is (nil? t8))
+      (is (= :eof c9))
+      (is (= {:base "http://test.com/" "test" "http://test.org#"} (:namespaces g9)))
+      (is (nil? t9))
 
 
       (is (thrown? ExceptionInfo
