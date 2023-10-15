@@ -1,6 +1,6 @@
 # quoll/raphael
 
-A Clojure/ClojureScript library for parsing strings containing the [Terse Triples Language: Turtle](https://www.w3.org/TR/turtle/).
+A Clojure/ClojureScript library for parsing the [Terse Triples Language: Turtle](https://www.w3.org/TR/turtle/).
 
 This parser is in pure Clojure for portability.
 It also avoids parser tools, in an effort to parse large documents quickly.
