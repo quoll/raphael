@@ -1049,11 +1049,11 @@
   return: {:base <optional IRI>
            :namespaces <prefixes mapped to IRIs>
            :triples <vector of 3 element vectors>}"
-  ([in] (parse in (new-generator)))
-  ([in generator]
+  ([in] (parse in (new-generator) (triples/triple-accumulator)))
+  ([in generator] (parse in generator (triples/triple-accumulator)))
+  ([in generator triples]
    (reset-pos!)
-   (let [triples (triples/triple-accumulator)
-         reader (rdr/position-reader in)
+   (let [reader (rdr/position-reader in)
          [gen triples] (binding [*loc* (volatile! [1 0])]
                            (loop [[c gen triples] (parse-statement reader generator triples)]
                              (if (= :eof c)

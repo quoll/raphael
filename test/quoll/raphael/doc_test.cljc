@@ -148,13 +148,13 @@ The second line
 
 (def document24
 "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-    _:b0  rdf:first  1 ;
-          rdf:rest   _:b1 .
-    _:b1  rdf:first  2.0 ;
+    _:b0  rdf:rest   _:b1;
+          rdf:first  1 .
+    _:b1  rdf:first  2.0;
           rdf:rest   _:b2 .
-    _:b2  rdf:first  3E1 ;
-          rdf:rest   rdf:nil .
-    _:b0  :p         \"w\" .")
+    _:b2  rdf:first  3E1;
+          rdf:rest   rdf:nil.
+    _:b0  :p         \"w\".")
 
 (def document25
 "PREFIX : <http://example.org/stuff/1.0/>
@@ -396,8 +396,8 @@ and up to two sequential apostrophes ('')."]])))))
       (is (nil? base))
       (is (= namespaces {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"}))
       (is (= (simplify triples)
-             [["_:b0" :rdf/first 1]
-              ["_:b0" :rdf/rest "_:b1"]
+             [["_:b0" :rdf/rest "_:b1"]
+              ["_:b0" :rdf/first 1]
               ["_:b1" :rdf/first 2.0]
               ["_:b1" :rdf/rest "_:b2"]
               ["_:b2" :rdf/first 30.0]
