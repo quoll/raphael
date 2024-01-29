@@ -607,11 +607,13 @@
   c - the char found at position n.
   gen - the node generator.
   triples - the current triples.
-  return: [c value]
+  return: [c value gen triples nchar]
   c - the character immediately after the number.
   value - the parsed number.
   gen - the updated generator
-  triples - the triples generated in parsing the node."
+  triples - the triples generated in parsing the node.
+  nchar - an optional character that was read ahead to determine the type of number.
+          Will only appear if c is a dot `.` character. It also indicates that skip-whitespace was called."
   [r c gen triples]
   (let [sb (text/string-builder)
         ;; determine the sign
@@ -622,44 +624,52 @@
                  (get-char! r))
             c)
         ;; get all the digits, and up to 1 dot. If a dot exists, then dbl? will be true
-        [c dbl? digits?] (loop [lc c d? false dg? false]
-                           (case lc
-                             (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (do
-                                                               (text/append! sb lc)
-                                                               (recur (get-char! r) d? true))
-                             \. (if d?
-                                  [lc d? dg?]
-                                  (do
-                                    (text/append! sb lc)
-                                    (recur (get-char! r) true dg?)))
-                             [lc d? dg?]))
+        [c dbl? digits? last-char] (loop [lc c d? false dg? false last-char' nil]
+                                     (case lc
+                                       (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (do
+                                                                         (text/append! sb lc)
+                                                                         (recur (get-char! r) d? true lc))
+                                       \. (if d?
+                                            [lc d? dg? last-char']
+                                            (do
+                                              (text/append! sb lc)
+                                              (recur (get-char! r) true dg? lc)))
+                                       [lc d? dg? last-char']))
         _ (when-not digits?
+            ;; this means that there was no number at all, regardles of the presence of a dot
             (throw-unex *loc* (str "Invalid floating point number in:") r (str sb)))
+
         ;; read an exponent trailer, if one exists
-        [c dbl?] (if (or (= c \e) (= c \E))
-                   (let [_ (text/append! sb c)
-                         c' (get-char! r)
-                         ;; read the optional exponent sign
-                         c' (if (or (= c' \+) (= c' \-))
-                              (do
-                                (text/append! sb c')
-                                (get-char! r))
-                              c')]
-                     ;; read the exponent digits
-                     (loop [cc c' dgts? false]
-                       (case cc
-                         (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (do
-                                                           (text/append! sb cc)
-                                                           (recur (get-char! r) true))
-                         (if dgts?
-                           [cc true]
-                           (throw-unex *loc* (str "Invalid floating point number in:") r (str sb))))))
-                   ;; no exponent
-                   [c dbl?])
+        [c dbl? text nchar] (if (or (= c \e) (= c \E))
+                              (let [_ (text/append! sb c)
+                                    c' (get-char! r)
+                                    ;; read the optional exponent sign
+                                    c' (if (or (= c' \+) (= c' \-))
+                                         (do
+                                           (text/append! sb c')
+                                           (get-char! r))
+                                         c')]
+                                ;; read the exponent digits
+                                (loop [cc c' dgts? false]
+                                  (case cc
+                                    (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9) (do
+                                                                      (text/append! sb cc)
+                                                                      (recur (get-char! r) true))
+                                    (if dgts?
+                                      [cc true (str sb) nil]
+                                      (throw-unex *loc* (str "Invalid floating point number in:") r (str sb))))))
+                              ;; no exponent
+                              ;; if the final character was a dot, then process to identify the number type
+                              (if (= \. last-char)
+                                (let [c' (skip-whitespace r c)]
+                                  (if (#{\. \, \; \) \]} c')
+                                    [c' true (str sb) c'] ;; followed by end of triple, so this is a double
+                                    [\. false (subs (str sb) 0 (dec (count sb))) c'])) ;; this was the end of triple, so an int
+                                [c dbl? (str sb) nil]))
         nr (if dbl?
-             (parse-double (str sb))
-             (parse-long (str sb)))]
-    [c nr gen triples]))
+             (parse-double text)
+             (parse-long text))]
+    [c nr gen triples nchar]))
 
 (declare parse-predicate parse-object)
 
@@ -682,9 +692,9 @@
     (if (= \) c)
       [(get-char! r) rnil gen triples]
       (let [[gen head] (new-node gen)]
-        (loop [last-node head [c node gen triples] (parse-object r c gen triples)]
+        (loop [last-node head [c node gen triples opt-c] (parse-object r c gen triples)]
           (let [triples (triples/append! triples last-node rfirst node)
-                c (skip-whitespace r c)]
+                c (or opt-c (skip-whitespace r c))]
             (if (= \) c)
               (let [triples (triples/append! triples last-node rrest rnil)]
                 [(get-char! r) head gen triples])
@@ -757,22 +767,22 @@
     (if-not pred
       [c gen triples]
       (let [c (skip-whitespace r c)
-            [c gen triples] (loop [[c obj gen triples] (parse-object r c gen triples)]
-                              (let [c (skip-whitespace r c)
-                                    triples (triples/append! triples subject pred obj)]
-                                (case c
-                                  (\] \. \;) [c gen triples]
-                                  \, (let [c (skip-whitespace r (get-char! r))]
-                                       (if-let [parse-result (try
-                                                               (parse-object r c gen triples)
-                                                               (catch ExceptionInfo e nil))]
-                                         (recur parse-result)
-                                         [c gen triples]))
-                                  (throw-unex *loc* "Unexpected separator in predicate-object list: '" r (str c "' " (last (seq triples)))))))]
+            [c gen triples opt-c] (loop [[c obj gen triples opt-c] (parse-object r c gen triples)]
+                                    (let [c (if opt-c c (skip-whitespace r c))
+                                          triples (triples/append! triples subject pred obj)]
+                                      (case c
+                                        (\] \. \;) [c gen triples opt-c]
+                                        \, (let [c (or opt-c (skip-whitespace r (get-char! r)))]
+                                             (if-let [parse-result (try
+                                                                     (parse-object r c gen triples)
+                                                                     (catch ExceptionInfo e nil))]
+                                               (recur parse-result)
+                                               [c gen triples nil]))
+                                        (throw-unex *loc* "Unexpected separator in predicate-object list: '" r (str c "' " (last (seq triples)))))))]
         (if (= c \;)
-          (let [c (skip-whitespace r (get-char! r))]
+          (let [c (or opt-c (skip-whitespace r (get-char! r)))]
             (recur (maybe-parse-predicate r c gen triples)))
-          [c gen triples])))))
+          [c gen triples opt-c])))))
 
 (defn anon-blank-node
   "Generates a new blank node with no properties. Already passed the opening [ character, and whitespace.
@@ -805,8 +815,8 @@
   enf? - is this enough if this is a subject? A predicateObject sequence is not needed. true."
   [r c gen triples]
   (let [[gen node] (new-node gen)
-        [c gen triples] (parse-predicate-object-list r c node gen triples)
-        c (skip-whitespace r c)]
+        [c gen triples opt-c] (parse-predicate-object-list r c node gen triples)
+        c (or opt-c (skip-whitespace r c))]
     (if (= c \])
       [(get-char! r) node gen triples true]
       (throw-unex *loc* "Structured blank node entity improperly terminated with '" r (str c "' " (last (seq triples)))))))
@@ -872,6 +882,8 @@
   object - the node for the parsed object.
   gen - the updated generator.
   triples - the triples generated in parsing the node.
+  nchar - An optional character that was read ahead to determine the type of number.
+          Will only appear if c is a dot `.` character.
   Blank node entities can also return a true at the end of the vector, but this should be ignored."
   [r c gen triples]
   (case c
@@ -879,9 +891,11 @@
     \( (parse-collection r c gen triples)
     \_ (parse-blank-node r c gen triples)
     \[ (let [c (skip-whitespace r (get-char! r))]
-         (if (= \] c)
-           (anon-blank-node r c gen triples)
-           (parse-blank-node-entity r c gen triples)))
+         (subvec 
+          (if (= \] c)
+            (anon-blank-node r c gen triples)
+            (parse-blank-node-entity r c gen triples))
+          0 4))
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number r c gen triples)
     (\' \") (parse-literal r c gen triples)
     \f (parse-ambiguous-elt r c gen triples "false"
@@ -907,12 +921,12 @@
       [:eof gen triples]
       (let [[c subject gen triples enf?] (parse-subject r c gen triples)
             c (skip-whitespace r c)
-            [c gen triples] (parse-predicate-object-list r c subject gen triples)]
+            [c gen triples opt-c] (parse-predicate-object-list r c subject gen triples)]
         (when-not (= \. c)
           (throw-unex *loc* "Statements invalidly terminated: " r (str (last (seq triples)) \' c \')))
         (when (and (not enf?) (= initial-count (count triples)))
           (throw-unex *loc* "Subjects require predicates and objects: " r c))
-        [(get-char! r) gen triples]))))
+        [(or opt-c (get-char! r)) gen triples]))))
 
 (defn pre-parse-triples
   "Parse a top level triples from a string,
@@ -932,12 +946,12 @@
       (throw-unex *loc* "Unexpected termination while parsing a prefixed line: " r c)
       (let [[c subject gen triples enf?] (parse-prefixed-name r pre c gen triples)
             c (skip-whitespace r c)
-            [c gen triples] (parse-predicate-object-list r c subject gen triples)]
+            [c gen triples opt-c] (parse-predicate-object-list r c subject gen triples)]
         (when-not (= \. c)
           (throw-unex *loc* "Statements invalidly terminated: " r (str (last (seq triples)) c)))
         (when (and (not enf?) (= initial-count (count triples)))
           (throw-unex *loc* "Subjects require predicates and objects: " r c))
-        [(get-char! r) gen triples]))))
+        [(or opt-c (get-char! r)) gen triples]))))
 
 (defn parse-prefix-iri-end
   "Parse an iri and a newline for a PREFIX or BASE directive.

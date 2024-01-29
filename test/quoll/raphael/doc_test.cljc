@@ -146,10 +146,14 @@ The second line
 "@prefix : <http://example.org/stuff/1.0/> .
 (1 2.0 3E1) :p \"w\" .")
 
+(def document23a
+"@prefix : <http://example.org/stuff/1.0/> .
+(3E1 2.0 1.) :p \"w\" .")
+
 (def document24
 "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
     _:b0  rdf:rest   _:b1;
-          rdf:first  1 .
+          rdf:first  1.
     _:b1  rdf:first  2.0;
           rdf:rest   _:b2 .
     _:b2  rdf:first  3E1;
@@ -386,6 +390,21 @@ and up to two sequential apostrophes ('')."]])))))
               ["_:b1" :rdf/first 2.0]
               ["_:b1" :rdf/rest "_:b2"]
               ["_:b2" :rdf/first 30.0]
+              ["_:b2" :rdf/rest :rdf/nil]
+              ["_:b0" :p "w"]])))))
+
+
+(deftest document23a-test
+  (testing "Parsing of example23a document"
+    (let [{:keys [base namespaces triples]} (parse document23a)]
+      (is (nil? base))
+      (is (= namespaces {"" "http://example.org/stuff/1.0/"}))
+      (is (= (simplify triples)
+             [["_:b0" :rdf/first 30.0]
+              ["_:b0" :rdf/rest "_:b1"]
+              ["_:b1" :rdf/first 2.0]
+              ["_:b1" :rdf/rest "_:b2"]
+              ["_:b2" :rdf/first 1.0]
               ["_:b2" :rdf/rest :rdf/nil]
               ["_:b0" :p "w"]])))))
 
