@@ -135,24 +135,8 @@ vector, and then the called needs to unpack this data. Given the multiple functi
 I tried several approaches including hosted arrays, only to find that vector packing and destructuring was the fastest
 mechanism, only taking < 10 nanoseconds each time.
 
-#### Lookahead
-Right now the only data source supported is a string. That's not as significant a limitation as it once was, because
-`slurp`ing GB files into memory is withing the capabilities of most modern computers.
-
-However, I would eventually like the capability to stream things that are much larger. To that end the parser avoids
-using "Lookahead" for most operations. This means that it could work just as well on a stream as on a string.
-
-The current exceptions to this are:
- - **Numbers**: These are currently pulled of the head of the string with a regex. This can be replaced with a short function.
- - **Language codes**: Like Numbers, these are pulled in via a regex, and can be reimplemented with a function.
- - **true**/**false**: These are more awkward because they could just as easily be the beginning of a Qualified Name
-                       with a prefix (e.g. `true-ish:data`). Only when they finish with a non-prefix character can
-                       it be guaranteed that they are a boolean. This required a change to the code to avoid backtracking.
- - **PREFIX**/**BASE**: Like boolean literals, these could be the beginning of Qualified Names.
-
-The first 2 are minor. The last 2 need a little thought. The simple answer is to use a PushbackReader (as included on the JVM)
-but this is less available on JavaScript.
-
+#### TODO
+- Correctly parse integer values that are followed by a dot and no spaces (this is currently presumed to be a float).
 
 ## License
 
