@@ -1,18 +1,20 @@
 (ns quoll.raphael.core-test
   (:require [clojure.test :refer [deftest testing is]]
-            [quoll.raphael.core :refer [skip-whitespace skip-to dot? newline? add-base
-                                        parse-iri-ref add-prefix new-generator parse-statement
-                                        parse-local parse-prefixed-name parse-number parse-string
-                                        parse-long-string parse-literal parse-lang-tag
-                                        anon-blank-node parse-blank-node-entity parse-blank-node
-                                        new-lang-string new-literal new-iri
-                                        new-qname
-                                        parse-predicate-object-list parse-collection
-                                        parse]]
+            [quoll.raphael.core :as core
+             :refer [skip-whitespace skip-to dot? newline? add-base
+                     parse-iri-ref add-prefix new-generator parse-statement
+                     parse-local parse-prefixed-name parse-number parse-string
+                     parse-long-string parse-literal parse-lang-tag
+                     anon-blank-node parse-blank-node-entity parse-blank-node
+                     new-lang-string new-literal new-iri
+                     new-qname
+                     parse-predicate-object-list parse-collection
+                     parse]]
             [quoll.raphael.reader :as rdr :refer [position-reader get-char!]]
             [quoll.raphael.text :refer [char-at]]
             [quoll.raphael.triples :refer [triple-accumulator]]
-            [quoll.rdf :refer [iri unsafe-blank-node RDF-NIL RDF-FIRST RDF-REST RDF-TYPE]])
+            [quoll.rdf :as rdf :refer [iri unsafe-blank-node RDF-NIL RDF-FIRST RDF-REST RDF-TYPE typed-literal XSD-STRING]]
+            [tiara.data :refer [EMPTY_MAP]])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 #?(:clj (set! *warn-on-reflection* true))
@@ -261,6 +263,7 @@
     (is (thrown? ExceptionInfo (parse-number' ". ")))
     (is (thrown? ExceptionInfo (parse-number' "-. ")))))
 
+
 (defn parse-string' [s] (parse-string (position-reader (subs s 2)) (second s) (first s)))
 
 (deftest string-test
@@ -311,6 +314,31 @@
       (is (thrown? ExceptionInfo (parse-lang-tag' "en- " g nil "")))
       (is (thrown? ExceptionInfo (parse-lang-tag' "- " g nil ""))))))
 
+(defrecord TestGenerator [counter bnode-cache namespaces]
+  core/NodeGenerator
+  (new-node [this] [(update this :counter inc) (rdf/unsafe-blank-node (str "b" counter))])
+  (new-node [this label]
+    (if-let [node (get bnode-cache label)]
+      [this node]
+      (let [node (rdf/unsafe-blank-node (str "b" counter))]
+        [(-> this (update :counter inc) (update :bnode-cache assoc label node)) node])))
+  (add-base [this iri] (update this :namespaces assoc :base (rdf/as-str iri)))
+  (add-prefix [this prefix iri] (update this :namespaces assoc prefix (rdf/as-str iri)))
+  (iri-for [this prefix] (get namespaces prefix))
+  (get-namespaces [this] (dissoc namespaces :base))
+  (get-base [this] (:base namespaces))
+  (new-qname [this prefix local] (rdf/iri (str (get namespaces prefix) local) prefix local))
+  (new-iri [this iri] (rdf/iri iri))
+  (new-literal [this s] (rdf/typed-literal s rdf/XSD-STRING))
+  (new-literal [this s t] (rdf/typed-literal s t))
+  (new-lang-string [this s lang] (rdf/lang-literal s lang))
+  (rdf-type [this] RDF-TYPE)
+  (rdf-first [this] RDF-FIRST)
+  (rdf-rest [this] RDF-REST)
+  (rdf-nil [this] RDF-NIL))
+
+(defn test-generator [] (->TestGenerator 0 {} EMPTY_MAP))
+
 (defn parse-literal'
   [s g] (parse-literal (position-reader (subs s 1)) (first s) g nil))
 
@@ -328,6 +356,29 @@
       (is (= [:eof "hello wörld" g nil] (parse-literal' "'''hello w\\u00f6rld'''" g)))
       (is (= [:eof "hello w🫤rld" g nil] (parse-literal' "'''hello w\\U0001FAE4rld'''" g)))
       (is (= [:eof "hello '' wörld" g nil] (parse-literal' "'''hello '' w\\u00f6rld'''" g)))
+      (is (= [:eof (new-lang-string g "hello world" "en") g nil]
+             (parse-literal' "\"hello world\"@en" g)))
+      (is (= [\space (new-lang-string g "hello world" "en-uk") g nil]
+             (parse-literal' "\"hello world\"@en-uk " g)))
+      (is (= [:eof (new-literal g "hello world" (new-iri g "http://xsd.org/string")) g nil]
+             (parse-literal' "\"hello world\"^^<http://xsd.org/string>" g)))
+      (is (= [:eof (new-literal g "hello world"
+                                   (iri "http://xsd.org/string" "xsd" "string"))
+              g nil]
+             (parse-literal' "\"hello world\"^^xsd:string" g)))))
+  (testing "Parsing string literals with a non-default generator"
+    (let [g (-> (test-generator) (add-prefix "xsd" "http://xsd.org/"))]
+      (is (= [:eof (typed-literal "" XSD-STRING) g nil] (parse-literal' "\"\"" g)))
+      (is (= [:eof (typed-literal "hello world" XSD-STRING) g nil] (parse-literal' "\"hello world\"" g)))
+      (is (= [:eof (typed-literal "hello world" XSD-STRING) g nil] (parse-literal' "\"\"\"hello world\"\"\"" g)))
+      (is (= [:eof (typed-literal "hello world" XSD-STRING) g nil] (parse-literal' "'''hello world'''" g)))
+      (is (= [\space (typed-literal "hello\nworld" XSD-STRING) g nil] (parse-literal' "\"\"\"hello\\nworld\"\"\" " g)))
+      (is (= [\space (typed-literal "hello \"world\" " XSD-STRING) g nil] (parse-literal' "\"\"\"hello \"world\" \"\"\" " g)))
+      (is (= [\space (typed-literal "hello 'world' " XSD-STRING) g nil] (parse-literal' "'''hello 'world' ''' " g)))
+      (is (= [\' (typed-literal "hello 'world" XSD-STRING) g nil] (parse-literal' "'''hello 'world'''' " g)))
+      (is (= [:eof (typed-literal "hello wörld" XSD-STRING) g nil] (parse-literal' "'''hello w\\u00f6rld'''" g)))
+      (is (= [:eof (typed-literal "hello w🫤rld" XSD-STRING) g nil] (parse-literal' "'''hello w\\U0001FAE4rld'''" g)))
+      (is (= [:eof (typed-literal "hello '' wörld" XSD-STRING) g nil] (parse-literal' "'''hello '' w\\u00f6rld'''" g)))
       (is (= [:eof (new-lang-string g "hello world" "en") g nil]
              (parse-literal' "\"hello world\"@en" g)))
       (is (= [\space (new-lang-string g "hello world" "en-uk") g nil]
