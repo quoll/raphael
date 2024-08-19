@@ -136,10 +136,10 @@ I tried several approaches including hosted arrays, only to find that vector pac
 mechanism, only taking < 10 nanoseconds each time.
 
 #### TODO
-- Correctly parse integer values that are followed by a dot and no spaces (this is currently presumed to be a float).
+- Extend to [TriG](https://www.w3.org/TR/trig/)
 
 ## License
 
-Copyright © 2023 Paula Gearon
+Copyright © 2023-2024 Paula Gearon
 
 Distributed under the Eclipse Public License version 2.0.
