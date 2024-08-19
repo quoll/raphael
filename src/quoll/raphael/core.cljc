@@ -78,7 +78,8 @@
   (new-iri [this iri]
     (rdf/iri iri))
   (new-literal [this s]
-    (rdf/typed-literal s rdf/XSD-STRING))
+    ;; (rdf/typed-literal s rdf/XSD-STRING)
+    s)
   (new-literal [this s t]
     (rdf/typed-literal s t))
   (new-lang-string [this s lang]
@@ -445,7 +446,7 @@
             (if (= end-q next-char) 
               (let [c3 (get-char! r)]
                 (if (= end-q c2)
-                  [c3 (str sb)]
+                  [c3 (str sb)]  ;; exit point
                   (do    ;; third character was not a third quote
                     (text/append! sb current)
                     (text/append! sb next-char)
@@ -497,7 +498,7 @@
             (do
               (text/append! sb current)
               (recur false next-char))
-            [next-char (str sb)]))
+            [next-char (str sb)]))  ;; exit point
 
         (= :eof current)
         (throw-unex *loc* "Improperly terminated literal: " r (str sb))
@@ -599,7 +600,7 @@
                [c' (new-literal gen lit-str iri) gen triples])
              (throw-unex *loc* "Badly formed type expression on literal. Expected ^^: " r (str tc))))
       \@ (parse-lang-tag r (get-char! r) gen triples lit-str)
-      [c lit-str gen triples])))
+      [c (new-literal gen lit-str) gen triples])))
 
 (defn parse-number
   "Parse a numeric literal.
