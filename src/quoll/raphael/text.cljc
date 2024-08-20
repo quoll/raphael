@@ -30,6 +30,11 @@
   #?(:clj [^StringBuilder sb data] :cljs [sb data])
   (.append sb data))
 
+(defn len
+  "Gets the length of data in a string buffer"
+  #?(:clj [^StringBuilder sb] :cljs [sb])
+  #?(:clj (count sb) :cljs (.getLength sb)))
+
 #?(:clj
    (defn last-char
      "Returns the last char appended to a string builder.

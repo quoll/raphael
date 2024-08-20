@@ -229,6 +229,7 @@
     (is (= [\space 123 nil nil nil] (parse-number' "123 ")))
     (is (= [\space 0 nil nil nil] (parse-number' "0 ")))
     (is (= [\. 0 nil nil :eof] (parse-number' "0. ")))
+    (is (= [\. 0 nil nil :eof] (parse-number' "0. ")))
     (is (= [\. 0.0 nil nil \.] (parse-number' "0. .")))
     (is (= [\space 0.234 nil nil nil] (parse-number' "0.234 ")))
     (is (= [\space 0.234 nil nil nil] (parse-number' ".234 ")))

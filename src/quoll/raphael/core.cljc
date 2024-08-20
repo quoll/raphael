@@ -665,7 +665,7 @@
                                 (let [c' (skip-whitespace r c)]
                                   (if (#{\. \, \; \) \]} c')
                                     [c' true (str sb) c'] ;; followed by end of triple, so this is a double
-                                    [\. false (subs (str sb) 0 (dec (count sb))) c'])) ;; this was the end of triple, so an int
+                                    [\. false (subs (str sb) 0 (dec (text/len sb))) c'])) ;; this was the end of triple, so an int
                                 [c dbl? (str sb) nil]))
         nr (if dbl?
              (parse-double text)
