@@ -78,7 +78,8 @@
   (new-iri [this iri]
     (rdf/iri iri))
   (new-literal [this s]
-    ;; (rdf/typed-literal s rdf/XSD-STRING)
+    ;; Default returns the raw object. Alternate implementations may return a typed literal
+    ;; e.g. "hello" -> (rdf/typed-literal "hello" rdf/XSD-STRING)
     s)
   (new-literal [this s t]
     (rdf/typed-literal s t))
@@ -668,8 +669,8 @@
                                     [\. false (subs (str sb) 0 (dec (text/len sb))) c'])) ;; this was the end of triple, so an int
                                 [c dbl? (str sb) nil]))
         nr (if dbl?
-             (parse-double text)
-             (parse-long text))]
+             (new-literal gen (parse-double text))
+             (new-literal gen (parse-long text)))]
     [c nr gen triples nchar]))
 
 (declare parse-predicate parse-object)
@@ -870,7 +871,7 @@
           (recur (inc a) (get-char! r)))
         (if (or (pn-chars? cp) (= \: cp))
           (parse-prefixed-name r text cp gen triples)
-          (non-iri-op))))))
+          (non-iri-op cp))))))
 
 (defn parse-object
   "Parse an object entity, including any triples.
@@ -900,9 +901,9 @@
     (\0 \1 \2 \3 \4 \5 \6 \7 \8 \9 \. \+ \-) (parse-number r c gen triples)
     (\' \") (parse-literal r c gen triples)
     \f (parse-ambiguous-elt r c gen triples "false"
-                            (fn [] [(get-char! r) false gen triples]))
+                            (fn [cp] [cp (new-literal gen false) gen triples]))
     \t (parse-ambiguous-elt r c gen triples "true"
-                            (fn [] [(get-char! r) true gen triples]))
+                            (fn [cp] [cp (new-literal gen true) gen triples]))
     (parse-prefixed-name r c gen triples)))
 
 (defn parse-triples

@@ -5,6 +5,7 @@
                      parse-iri-ref add-prefix new-generator parse-statement
                      parse-local parse-prefixed-name parse-number parse-string
                      parse-long-string parse-literal parse-lang-tag
+                     parse-object
                      anon-blank-node parse-blank-node-entity parse-blank-node
                      new-lang-string new-literal new-iri
                      new-qname
@@ -18,6 +19,31 @@
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 #?(:clj (set! *warn-on-reflection* true))
+
+(defrecord TestGenerator [counter bnode-cache namespaces]
+  core/NodeGenerator
+  (new-node [this] [(update this :counter inc) (rdf/unsafe-blank-node (str "b" counter))])
+  (new-node [this label]
+    (if-let [node (get bnode-cache label)]
+      [this node]
+      (let [node (rdf/unsafe-blank-node (str "b" counter))]
+        [(-> this (update :counter inc) (update :bnode-cache assoc label node)) node])))
+  (add-base [this iri] (update this :namespaces assoc :base (rdf/as-str iri)))
+  (add-prefix [this prefix iri] (update this :namespaces assoc prefix (rdf/as-str iri)))
+  (iri-for [this prefix] (get namespaces prefix))
+  (get-namespaces [this] (dissoc namespaces :base))
+  (get-base [this] (:base namespaces))
+  (new-qname [this prefix local] (rdf/iri (str (get namespaces prefix) local) prefix local))
+  (new-iri [this iri] (rdf/iri iri))
+  (new-literal [this s] (rdf/typed-literal s))
+  (new-literal [this s t] (rdf/typed-literal s t))
+  (new-lang-string [this s lang] (rdf/lang-literal s lang))
+  (rdf-type [this] RDF-TYPE)
+  (rdf-first [this] RDF-FIRST)
+  (rdf-rest [this] RDF-REST)
+  (rdf-nil [this] RDF-NIL))
+
+(defn test-generator [] (->TestGenerator 0 {} EMPTY_MAP))
 
 (defn blank-node [n] (unsafe-blank-node (str "b" n)))
 
@@ -221,48 +247,105 @@
       (is (thrown? ExceptionInfo (parse-prefixed-name' ".b:cat " g)))
       (is (thrown? ExceptionInfo (parse-prefixed-name' "-b:cat " g))))))
 
-(defn parse-number' [s] (parse-number (position-reader (subs s 1)) (first s) nil nil))
+(defn parse-number'
+  [s gen] (parse-number (position-reader (subs s 1)) (first s) gen nil))
 
 (deftest number-test
   (testing "Parsing numeric literals"
-    (is (= [:eof 123 nil nil nil] (parse-number' "123")))
-    (is (= [\space 123 nil nil nil] (parse-number' "123 ")))
-    (is (= [\space 0 nil nil nil] (parse-number' "0 ")))
-    (is (= [\. 0 nil nil :eof] (parse-number' "0. ")))
-    (is (= [\. 0 nil nil :eof] (parse-number' "0. ")))
-    (is (= [\. 0.0 nil nil \.] (parse-number' "0. .")))
-    (is (= [\space 0.234 nil nil nil] (parse-number' "0.234 ")))
-    (is (= [\space 0.234 nil nil nil] (parse-number' ".234 ")))
-    (is (= [\space 23.4 nil nil nil] (parse-number' "23.40 ")))
-    (is (= [\. 234 nil nil :eof] (parse-number' "234. ")))
-    (is (= [\; 234.0 nil nil \;] (parse-number' "234. ;")))
-    (is (= [:eof -123 nil nil nil] (parse-number' "-123")))
-    (is (= [\space 123 nil nil nil] (parse-number' "+123 ")))
-    (is (= [\space 0 nil nil nil] (parse-number' "+0 ")))
-    (is (= [\. 0 nil nil :eof] (parse-number' "-0. ")))
-    (is (= [\. 0.0 nil nil \.] (parse-number' "-0..")))
-    (is (= [\space 0.234 nil nil nil] (parse-number' "+0.234 ")))
-    (is (= [\space -0.234 nil nil nil] (parse-number' "-.234 ")))
-    (is (= [\space 23.4 nil nil nil] (parse-number' "+23.40 ")))
-    (is (= [\. -234 nil nil :eof] (parse-number' "-234. ")))
-    (is (= [\; -234.0 nil nil \;] (parse-number' "-234.;")))
-    (is (= [\space 23.4e2 nil nil nil] (parse-number' "23.4e2 ")))
-    (is (= [\space 234.0e2 nil nil nil] (parse-number' "234.e2 ")))
-    (is (= [\space -234.0e2 nil nil nil] (parse-number' "-234.e2 ")))
-    (is (= [\space -23.4e2 nil nil nil] (parse-number' "-23.4e2 ")))
-    (is (= [\space 0.234e12 nil nil nil] (parse-number' "+.234e12 ")))
-    (is (= [\space 0.234e12 nil nil nil] (parse-number' ".234e12 ")))
-    (is (= [\space 0.234e-12 nil nil nil] (parse-number' "+.234e-12 ")))
-    (is (= [\space 0.234e12 nil nil nil] (parse-number' ".234e+12 ")))
-    (is (thrown? ExceptionInfo (parse-number' ".e+12 ")))
-    (is (thrown? ExceptionInfo (parse-number' "+e+12 ")))
-    (is (thrown? ExceptionInfo (parse-number' "-e+12 ")))
-    (is (thrown? ExceptionInfo (parse-number' "+.e+12 ")))
-    (is (thrown? ExceptionInfo (parse-number' "1e- ")))
-    (is (thrown? ExceptionInfo (parse-number' "+1e ")))
-    (is (thrown? ExceptionInfo (parse-number' "+e1 ")))
-    (is (thrown? ExceptionInfo (parse-number' ". ")))
-    (is (thrown? ExceptionInfo (parse-number' "-. ")))))
+    (let [g (-> (new-generator) (add-prefix "xsd" "http://xsd.org/"))]
+      (is (= [:eof 123 g nil nil] (parse-number' "123" g)))
+      (is (= [\space 123 g nil nil] (parse-number' "123 " g)))
+      (is (= [\space 0 g nil nil] (parse-number' "0 " g)))
+      (is (= [\. 0 g nil :eof] (parse-number' "0. " g)))
+      (is (= [\. 0 g nil :eof] (parse-number' "0. " g)))
+      (is (= [\. 0.0 g nil \.] (parse-number' "0. ." g)))
+      (is (= [\space 0.234 g nil nil] (parse-number' "0.234 " g)))
+      (is (= [\space 0.234 g nil nil] (parse-number' ".234 " g)))
+      (is (= [\space 23.4 g nil nil] (parse-number' "23.40 " g)))
+      (is (= [\. 234 g nil :eof] (parse-number' "234. " g)))
+      (is (= [\; 234.0 g nil \;] (parse-number' "234. ;" g)))
+      (is (= [:eof -123 g nil nil] (parse-number' "-123" g)))
+      (is (= [\space 123 g nil nil] (parse-number' "+123 " g)))
+      (is (= [\space 0 g nil nil] (parse-number' "+0 " g)))
+      (is (= [\. 0 g nil :eof] (parse-number' "-0. " g)))
+      (is (= [\. 0.0 g nil \.] (parse-number' "-0.." g)))
+      (is (= [\space 0.234 g nil nil] (parse-number' "+0.234 " g)))
+      (is (= [\space -0.234 g nil nil] (parse-number' "-.234 " g)))
+      (is (= [\space 23.4 g nil nil] (parse-number' "+23.40 " g)))
+      (is (= [\. -234 g nil :eof] (parse-number' "-234. " g)))
+      (is (= [\; -234.0 g nil \;] (parse-number' "-234.;" g)))
+      (is (= [\space 23.4e2 g nil nil] (parse-number' "23.4e2 " g)))
+      (is (= [\space 234.0e2 g nil nil] (parse-number' "234.e2 " g)))
+      (is (= [\space -234.0e2 g nil nil] (parse-number' "-234.e2 " g)))
+      (is (= [\space -23.4e2 g nil nil] (parse-number' "-23.4e2 " g)))
+      (is (= [\space 0.234e12 g nil nil] (parse-number' "+.234e12 " g)))
+      (is (= [\space 0.234e12 g nil nil] (parse-number' ".234e12 " g)))
+      (is (= [\space 0.234e-12 g nil nil] (parse-number' "+.234e-12 " g)))
+      (is (= [\space 0.234e12 g nil nil] (parse-number' ".234e+12 " g)))
+      (is (thrown? ExceptionInfo (parse-number' ".e+12 " g)))
+      (is (thrown? ExceptionInfo (parse-number' "+e+12 " g)))
+      (is (thrown? ExceptionInfo (parse-number' "-e+12 " g)))
+      (is (thrown? ExceptionInfo (parse-number' "+.e+12 " g)))
+      (is (thrown? ExceptionInfo (parse-number' "1e- " g)))
+      (is (thrown? ExceptionInfo (parse-number' "+1e " g)))
+      (is (thrown? ExceptionInfo (parse-number' "+e1 " g)))
+      (is (thrown? ExceptionInfo (parse-number' ". " g)))
+      (is (thrown? ExceptionInfo (parse-number' "-. " g)))))
+  (testing "Parsing numeric literals as literal objects"
+    (let [g (-> (test-generator) (add-prefix "xsd" "http://xsd.org/"))
+          rfloat (fn [f] (rdf/typed-literal (str f) rdf/XSD-FLOAT)) ;; These variations come from cljs.core/integer?
+          rint (fn [f] (rdf/typed-literal (str f) rdf/XSD-INTEGER))
+          jsvary (fn [f] (rdf/typed-literal (str f) #?(:clj rdf/XSD-FLOAT
+                                                       :cljs rdf/XSD-INTEGER)))]
+      (is (= [:eof (rint 123) g nil nil] (parse-number' "123" g)))
+      (is (= [\space (rint 123) g nil nil] (parse-number' "123 " g)))
+      (is (= [\space (rint 0) g nil nil] (parse-number' "0 " g)))
+      (is (= [\. (rint 0) g nil :eof] (parse-number' "0. " g)))
+      (is (= [\. (rint 0) g nil :eof] (parse-number' "0. " g)))
+      (is (= [\. (jsvary 0.0) g nil \.] (parse-number' "0. ." g)))
+      (is (= [\space (rfloat 0.234) g nil nil] (parse-number' "0.234 " g)))
+      (is (= [\space (rfloat 0.234) g nil nil] (parse-number' ".234 " g)))
+      (is (= [\space (rfloat 23.4) g nil nil] (parse-number' "23.40 " g)))
+      (is (= [\. (rint 234) g nil :eof] (parse-number' "234. " g)))
+      (is (= [\; (jsvary 234.0) g nil \;] (parse-number' "234. ;" g)))
+      (is (= [:eof (rint -123) g nil nil] (parse-number' "-123" g)))
+      (is (= [\space (rint 123) g nil nil] (parse-number' "+123 " g)))
+      (is (= [\space (rint 0) g nil nil] (parse-number' "+0 " g)))
+      (is (= [\. (rint 0) g nil :eof] (parse-number' "-0. " g)))
+      (is (= [\. #?(:clj (rdf/typed-literal "-0.0" rdf/XSD-FLOAT)
+                    :cljs (rdf/typed-literal "0" rdf/XSD-INTEGER))
+              g nil \.] (parse-number' "-0.." g)))
+      (is (= [\space (rfloat 0.234) g nil nil] (parse-number' "+0.234 " g)))
+      (is (= [\space (rfloat -0.234) g nil nil] (parse-number' "-.234 " g)))
+      (is (= [\space (rfloat 23.4) g nil nil] (parse-number' "+23.40 " g)))
+      (is (= [\. (rint -234) g nil :eof] (parse-number' "-234. " g)))
+      (is (= [\; (jsvary -234.0) g nil \;] (parse-number' "-234.;" g)))
+      (is (= [\space (jsvary 23.4e2) g nil nil] (parse-number' "23.4e2 " g)))
+      (is (= [\space (jsvary 234.0e2) g nil nil] (parse-number' "234.e2 " g)))
+      (is (= [\space (jsvary -234.0e2) g nil nil] (parse-number' "-234.e2 " g)))
+      (is (= [\space (jsvary -23.4e2) g nil nil] (parse-number' "-23.4e2 " g)))
+      (is (= [\space (jsvary 0.234e12) g nil nil] (parse-number' "+.234e12 " g)))
+      (is (= [\space (jsvary 0.234e12) g nil nil] (parse-number' ".234e12 " g)))
+      (is (= [\space (rfloat 0.234e-12) g nil nil] (parse-number' "+.234e-12 " g)))
+      (is (= [\space (jsvary 0.234e12) g nil nil] (parse-number' ".234e+12 " g))))))
+
+(defn parse-bool'
+  ([s gen] (parse-object (position-reader (subs s 1)) (first s) gen nil)))
+
+(deftest ambiguous-parse-test
+  (testing "Parsing boolean literals"
+    (let [g (-> (new-generator) (add-prefix "xsd" "http://xsd.org/"))]
+      (is (= [:eof true g nil] (parse-bool' "true" g)))
+      (is (= [\space true g nil] (parse-bool' "true " g)))
+      (is (= [:eof false g nil] (parse-bool' "false" g)))
+      (is (= [\space false g nil] (parse-bool' "false " g)))))
+  (testing "Parsing boolean literals as literal objects"
+    (let [g (-> (test-generator) (add-prefix "xsd" "http://xsd.org/"))
+          rbool (fn [b] (rdf/typed-literal (str b) rdf/XSD-BOOLEAN))]
+      (is (= [:eof (rbool true) g nil] (parse-bool' "true" g)))
+      (is (= [\space (rbool true) g nil] (parse-bool' "true " g)))
+      (is (= [:eof (rbool false) g nil] (parse-bool' "false" g)))
+      (is (= [\space (rbool false) g nil] (parse-bool' "false " g))))))
 
 
 (defn parse-string' [s] (parse-string (position-reader (subs s 2)) (second s) (first s)))
@@ -314,31 +397,6 @@
       (is (thrown? ExceptionInfo (parse-lang-tag' "en-uk- " g nil "")))
       (is (thrown? ExceptionInfo (parse-lang-tag' "en- " g nil "")))
       (is (thrown? ExceptionInfo (parse-lang-tag' "- " g nil ""))))))
-
-(defrecord TestGenerator [counter bnode-cache namespaces]
-  core/NodeGenerator
-  (new-node [this] [(update this :counter inc) (rdf/unsafe-blank-node (str "b" counter))])
-  (new-node [this label]
-    (if-let [node (get bnode-cache label)]
-      [this node]
-      (let [node (rdf/unsafe-blank-node (str "b" counter))]
-        [(-> this (update :counter inc) (update :bnode-cache assoc label node)) node])))
-  (add-base [this iri] (update this :namespaces assoc :base (rdf/as-str iri)))
-  (add-prefix [this prefix iri] (update this :namespaces assoc prefix (rdf/as-str iri)))
-  (iri-for [this prefix] (get namespaces prefix))
-  (get-namespaces [this] (dissoc namespaces :base))
-  (get-base [this] (:base namespaces))
-  (new-qname [this prefix local] (rdf/iri (str (get namespaces prefix) local) prefix local))
-  (new-iri [this iri] (rdf/iri iri))
-  (new-literal [this s] (rdf/typed-literal s rdf/XSD-STRING))
-  (new-literal [this s t] (rdf/typed-literal s t))
-  (new-lang-string [this s lang] (rdf/lang-literal s lang))
-  (rdf-type [this] RDF-TYPE)
-  (rdf-first [this] RDF-FIRST)
-  (rdf-rest [this] RDF-REST)
-  (rdf-nil [this] RDF-NIL))
-
-(defn test-generator [] (->TestGenerator 0 {} EMPTY_MAP))
 
 (defn parse-literal'
   [s g] (parse-literal (position-reader (subs s 1)) (first s) g nil))

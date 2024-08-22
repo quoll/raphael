@@ -1,9 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.9 - 2024-08-22
+### Fixed
+- Fixed parsing of literal values to always use the generator
+- Fixed parsing literal booleans to correctly pick up the next character
+
 ## 0.3.8 - 2024-08-20
 ### Fixed
--  Fixed problems in ClojureScript parsing floats with trailing decimal points.
+- Fixed problems in ClojureScript parsing floats with trailing decimal points.
 
 ### Dependency Updates
 - Clojure 1.11.4
