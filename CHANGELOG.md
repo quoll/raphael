@@ -1,6 +1,12 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.9 - 2024-09-06
+### Dependency Updates
+- Clojure 1.12.0
+- Tiara 0.3.6
+- RuDolF 0.2.3
+
 ## 0.3.9 - 2024-08-22
 ### Fixed
 - Fixed parsing of literal values to always use the generator
@@ -25,7 +31,9 @@ All notable changes to this project will be documented in this file. This change
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/quoll/raphael/compare/0.3.8...HEAD
+[Unreleased]: https://github.com/quoll/raphael/compare/0.3.10...HEAD
+[0.3.10]: https://github.com/quoll/raphael/compare/0.3.9...0.3.10
+[0.3.9]: https://github.com/quoll/raphael/compare/0.3.8...0.3.9
 [0.3.8]: https://github.com/quoll/raphael/compare/0.3.7...0.3.8
 [0.3.7]: https://github.com/quoll/raphael/compare/0.1.0...0.3.7
 
