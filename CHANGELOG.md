@@ -1,7 +1,13 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
-## 0.3.9 - 2024-09-06
+## 0.3.11 - 2025-01-26
+### Dependency Updates
+- RuDolF 0.2.4: this has better CIDER integration
+### Test Update
+- Added a new test for a reported document failure. The doc passes, but it showed up a CIDER issue.
+
+## 0.3.10 - 2024-09-06
 ### Dependency Updates
 - Clojure 1.12.0
 - Tiara 0.3.6
@@ -31,7 +37,8 @@ All notable changes to this project will be documented in this file. This change
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/quoll/raphael/compare/0.3.10...HEAD
+[Unreleased]: https://github.com/quoll/raphael/compare/0.3.11...HEAD
+[0.3.11]: https://github.com/quoll/raphael/compare/0.3.10...0.3.11
 [0.3.10]: https://github.com/quoll/raphael/compare/0.3.9...0.3.10
 [0.3.9]: https://github.com/quoll/raphael/compare/0.3.8...0.3.9
 [0.3.8]: https://github.com/quoll/raphael/compare/0.3.7...0.3.8

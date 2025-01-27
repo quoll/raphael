@@ -9,12 +9,12 @@ It also avoids parser tools, in an effort to parse large documents quickly.
 
 ### Leiningen/Boot
 ```clojure
-[org.clojars.quoll/raphael "0.3.10"]
+[org.clojars.quoll/raphael "0.3.11"]
 ```
 
 ### Clojure CLI/deps.edn
 ```clojure
-org.clojars.quoll/raphael {:mvn/version "0.3.10"}
+org.clojars.quoll/raphael {:mvn/version "0.3.11"}
 ```
 
 After bringing in the project, just use the `parse` function on a string or a Java reader.
@@ -140,6 +140,6 @@ mechanism, only taking < 10 nanoseconds each time.
 
 ## License
 
-Copyright © 2023-2024 Paula Gearon
+Copyright © 2023-2025 Paula Gearon
 
 Distributed under the Eclipse Public License version 2.0.
