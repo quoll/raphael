@@ -176,6 +176,22 @@ The second line
           rdf:rest   rdf:nil .
     _:b3  rdf:rest   rdf:nil .")
 
+(def document27
+  "@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ent: <tag:acme.com/initrode/pd/mm/id/e/> .
+@prefix attr: <tag:acme.com/initrode/pd/mm/id/a/> .
+
+ent:1efd782a-47b7-6790-8487-440cb3ab6e31 attr:paths \"0101, 1010\";
+                                         attr:sop_ref_id 12345;
+                                         attr:build \"\";
+                                         attr:vendor \"ACME\";
+                                         attr:cat 1;
+                                         attr:project_code 8675309;
+                                         attr:number \"C2187\";
+                                         attr:pattern_type \"p1x1\";
+                                         attr:elastic \"no\".")
+
 (defn simple
   [e]
   (cond
@@ -458,5 +474,27 @@ and up to two sequential apostrophes ('')."]])))))
               ["_:b4" :rdf/first 2]
               ["_:b4" :rdf/rest :rdf/nil]
               ["_:b3" :rdf/rest :rdf/nil]])))))
+
+
+(deftest document27-test
+  (testing "Parsing of example27 document"
+    (let [{:keys [base namespaces triples]} (parse document27)
+          main-node (keyword "ent" "1efd782a-47b7-6790-8487-440cb3ab6e31")]
+      (is (nil? base))
+      (is (= namespaces {"rdf" "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                         "rdfs" "http://www.w3.org/2000/01/rdf-schema#"
+                         "ent" "tag:acme.com/initrode/pd/mm/id/e/"
+                         "attr" "tag:acme.com/initrode/pd/mm/id/a/"}))
+      (is (= (simplify triples)
+             [[main-node :attr/paths "0101, 1010"]
+              [main-node :attr/sop_ref_id 12345]
+              [main-node :attr/build ""]
+              [main-node :attr/vendor "ACME"]
+              [main-node :attr/cat 1]
+              [main-node :attr/project_code 8675309]
+              [main-node :attr/number "C2187"]
+              [main-node :attr/pattern_type "p1x1"]
+              [main-node :attr/elastic "no"]])))))
+
 
 #?(:cljs (cljs.test/run-tests))
