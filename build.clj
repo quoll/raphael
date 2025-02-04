@@ -5,7 +5,7 @@
 
 (def pom "build-rsc/pom.xml")
 (def lib 'org.clojars.quoll/raphael)
-(def version "0.3.11")
+(def version "0.3.12")
 
 ;; clojure -T:build clean
 (defn clean "Clean the generated artifacts" [opts]

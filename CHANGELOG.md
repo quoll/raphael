@@ -1,6 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
+## 0.3.12 - 2025-02-03
+### Error Messages
+- Expanded the error messages on CURIEs containing a bad character in a prefix, to include the
+  character and the codepoint for the character.
+
 ## 0.3.11 - 2025-01-26
 ### Dependency Updates
 - RuDolF 0.2.4: this has better CIDER integration
@@ -37,7 +42,8 @@ All notable changes to this project will be documented in this file. This change
 ### Added
 - Initial release
 
-[Unreleased]: https://github.com/quoll/raphael/compare/0.3.11...HEAD
+[Unreleased]: https://github.com/quoll/raphael/compare/0.3.12...HEAD
+[0.3.12]: https://github.com/quoll/raphael/compare/0.3.11...0.3.12
 [0.3.11]: https://github.com/quoll/raphael/compare/0.3.10...0.3.11
 [0.3.10]: https://github.com/quoll/raphael/compare/0.3.9...0.3.10
 [0.3.9]: https://github.com/quoll/raphael/compare/0.3.8...0.3.9
