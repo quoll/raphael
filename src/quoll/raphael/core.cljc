@@ -4,7 +4,7 @@
   (:require [clojure.string :as str]
             [quoll.rdf :as rdf :refer [RDF-TYPE RDF-FIRST RDF-REST RDF-NIL]]
             [quoll.raphael.m :refer [throw-unex] :include-macros true]
-            [quoll.raphael.text :as text :refer [char-at]]
+            [quoll.raphael.text :as text :refer [char-at hex]]
             [quoll.raphael.reader :as rdr :refer [get-char! position]]
             [quoll.raphael.triples :as triples]
             [tiara.data :refer [EMPTY_MAP]])
@@ -365,7 +365,7 @@
   triples - the triples generated in parsing the node."
   ([r c gen triples]
    (when-not (or (pn-chars-base? c) (= \: c))
-     (throw-unex *loc* "Prefix char starts with illegal character" r (str c)))
+     (throw-unex *loc* "Prefix char starts with illegal character " r (str \' c "' <0x" (hex c) ">... ")))
    (parse-prefixed-name r nil c gen triples))
   ([r pre c gen triples]
    (let [sb (or pre (text/string-builder))

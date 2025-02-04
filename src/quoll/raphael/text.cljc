@@ -109,6 +109,12 @@
   #?(:clj (Long/parseLong s 16)
      :cljs (js/parseInt s 16)))
 
+(defn hex
+  "Emits a char as a hexadecimal string"
+  [c]
+  #?(:clj (Long/toHexString (int c))
+     :cljs (.toString (.charCodeAt c 0) 16)))
+
 (defn ssubs
   "A safe substring function. The same as a 3 argument `subs` but will not run out of range."
   [s start end]
