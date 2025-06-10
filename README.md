@@ -101,7 +101,7 @@ Prior experience in Clojure systems that build sequences of triples showed that 
 triples needed to be concattenated together. Whether this was done via `concat` or `insert`, the accumulation of
 vectors as return values from functions proved to have a performance cost.
 
-Shifting to a single _transitive_ vector and accumulating that triples into this object led to much better performance.
+Shifting to a single _transitive_ vector and accumulating the triples into this object led to much better performance.
 
 #### Mutation
 The first use of a _transitive_ accumulator stored it in a _Atom_, which are threadsafe mutable values. However,
